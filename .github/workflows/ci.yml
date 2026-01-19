@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pipx install uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Import smoke
+        run: uv run python -c "import importlib; importlib.import_module('train'); importlib.import_module('eval'); importlib.import_module('tune')"

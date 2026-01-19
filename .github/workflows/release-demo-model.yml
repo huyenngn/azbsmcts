@@ -1,0 +1,50 @@
+name: release-demo-model
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pipx install uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Train demo model
+        run: |
+          mkdir -p models
+          uv run train --games 50 --T 8 --S 4 --epochs 5 --seed 0 --out models/demo_model.pt
+          ls -lh models/demo_model.pt
+
+      - name: Create or update "demo-model" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view demo-model >/dev/null 2>&1 || \
+            gh release create demo-model --title "Demo model" --notes "Auto-generated demo checkpoint for the API."
+
+          gh release upload demo-model models/demo_model.pt --clobber

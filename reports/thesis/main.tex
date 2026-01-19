@@ -1,0 +1,315 @@
+\documentclass[12pt,oneside,openright]{article}
+\usepackage{booktabs}
+%Document Variables
+\newcommand{\topic}
+{An AlphaZero-inspired approach to imperfect information games}
+
+\usepackage[utf8]{inputenc}
+\usepackage[scaled]{helvet}
+\renewcommand\familydefault{\sfdefault} 
+\usepackage[T1]{fontenc}
+\usepackage{fancyhdr,xcolor}
+\usepackage{xcolor}
+\usepackage{datetime2}
+\usepackage[
+    sorting=none,
+]{biblatex}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\hypersetup{
+    colorlinks=false,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Overleaf Example},
+    pdfpagemode=FullScreen,
+    }
+
+\urlstyle{same}
+\usepackage{graphicx}
+\usepackage{geometry}
+\geometry{
+  a4paper,
+  left=30mm,
+  right=30mm,
+  top=4.5cm,
+  headheight=4cm,
+  bottom=4.5cm,
+  footskip=3cm
+}
+\usepackage{easyReview}
+
+\renewcommand*{\bibfont}{\footnotesize}
+\addbibresource{sample.bib}
+\usepackage{xurl}
+\newcommand{\changefont}{
+    \fontsize{23}{26}\selectfont
+}
+\definecolor{boxcl}{HTML}{666666}
+\definecolor{tubred}{HTML}{c50e1f}
+
+\graphicspath{{assets/}}
+\let\oldheadrule\headrule
+\renewcommand{\headrule}{\color{tubred}\oldheadrule}
+\renewcommand{\headrulewidth}{1.5pt}
+\fancyfoot{}
+
+\setlength{\parindent}{0pt}
+
+\fancyhead[HL]{Bachelor's Thesis} 
+\fancyhead[HR]{\includegraphics[width=0.15\textwidth]{assets/TUB.png}}
+\fancyfoot[R]{\centering\thepage}
+\pagestyle{fancy}
+\begin{document}
+\date{\today}
+% \begin{titlepage}
+\begin{center}
+    \vspace*{1cm}
+    \Huge
+    \textbf{\topic}
+    \LARGE
+    %Thesis Subtitle
+
+    \vspace{2cm}
+
+    \textbf{Thi Nguyen Ngan Huyen}\\
+    \vspace{0.5cm}
+    \normalsize
+    Matr Nr.: 400883\\
+    E-mail: thinguyen@campus.tu-berlin.de
+    \vspace{2cm}
+
+    \large
+    \begin{center}
+        First Supervisor: Prof. Dr. Dr. h.c. Sahin Albayrak \\
+        Second Supervisor: Dr.- Ing. Stefan Fricke
+    \end{center}        \vspace{0.8cm}
+
+    \Large
+    Technische Universität Berlin\\
+    Fakultät IV – Elektrotechnik und Informatik\\
+    \vspace{1cm}
+    \today
+\end{center}
+\newpage
+% \end{titlepage}
+\pagenumbering{arabic}
+
+\section{Introduction}
+5 - 8 pages
+
+Purpose: Define the problem, why it matters, and what you actually do.
+
+Contents:
+
+Imperfect information in games (short, concrete)
+
+Why Phantom Go is a good testbed
+
+Why AlphaZero-style methods don’t directly apply
+
+Your research question (one paragraph, no fluff)
+
+Contributions (bullet list, explicit, modest)
+
+Example contributions (realistic):
+
+Implementation of BS-MCTS for Phantom Go
+
+Design of an AlphaZero-inspired belief-based agent
+
+Empirical comparison under controlled conditions
+
+If you can’t state your contribution in 3 bullets, you don’t understand it yet.
+
+\section{Background and Related Work}
+
+10-15 pages
+
+Purpose: Show you understand the landscape and position your work.
+
+Split this cleanly:
+
+2.1 Phantom Go and Imperfect Information
+
+Rules of Phantom Go
+
+Observation model (illegal moves, captures)
+
+Why determinization is flawed (strategy fusion, non-locality)
+
+2.2 Monte Carlo Tree Search Variants
+
+Vanilla MCTS (brief)
+
+IS-MCTS (why it fails)
+
+BS-MCTS (high-level idea, defer algorithmic details)
+
+2.3 AlphaZero
+
+Core loop: self-play → MCTS → NN training
+
+Why it assumes full observability
+
+Known attempts at imperfect information (ReBeL, etc.)
+
+Do not dump equations here. This section is conceptual.
+
+\section{Problem Statement}
+
+5 pages
+
+Purpose: Make the problem mathematically and algorithmically precise.
+
+This is where weak theses collapse. Yours must include:
+
+Game definition (state, action, observation, belief)
+
+What the agent actually observes
+
+What “belief state” means in your implementation
+
+What performance means (win rate, convergence, etc.)
+
+If you skip this, your experiments will look arbitrary.
+
+\section{Belief-State MCTS for Phantom Go}
+
+12-15 pages
+
+Purpose: This is your baseline and your anchor.
+
+4.1 Belief-State Representation
+
+How you represent sampled states
+
+What is stored vs approximated
+
+Memory and computation trade-offs
+
+4.2 Algorithm Description
+
+Walk through Algorithm 1 from the paper in your own words
+
+Sampling
+
+Selection (player vs opponent nodes)
+
+Expansion, simulation, backpropagation
+
+You must explain why opponent guessing/predicting exists, even if you simplify it.
+
+4.3 Implementation Details
+
+OpenSpiel integration
+
+Key hyperparameters
+
+Simplifications vs original paper (be honest)
+
+This section alone can carry a bachelor’s thesis if done well.
+
+\section{AlphaZero-Inspired Method for Phantom Go}
+
+12-15 pages
+
+Purpose: Show how AlphaZero breaks and how you fix it.
+
+5.1 Why Vanilla AlphaZero Fails
+
+Observation mismatch
+
+Invalid state evaluation
+
+Policy/value collapse
+
+5.2 Belief-Based AlphaZero Architecture
+
+Input representation (belief samples, aggregated features, etc.)
+
+Modified MCTS (how it differs from Section 4)
+
+Training targets (policy/value from belief-MCTS)
+
+Be explicit: this is AlphaZero-inspired, not AlphaZero.
+
+5.3 Training Procedure
+
+Self-play setup
+
+Network architecture (keep it simple)
+
+Loss functions
+
+Compute constraints
+
+If you try to be “clever” here, you’ll fail. Simplicity wins.
+
+\section{Experimental Evaluation}
+
+10-12 pages
+
+Purpose: This is where your thesis earns its grade.
+
+6.1 Experimental Setup
+
+Hardware
+
+Board size
+
+Time limits
+
+Number of games
+
+6.2 Baselines
+
+BS-MCTS (from Section 4)
+
+Possibly IS-MCTS (optional)
+
+6.3 Results
+
+Win rate comparisons
+
+Learning curves
+
+Stability vs compute
+
+Sensitivity to hyperparameters
+
+No storytelling. Tables, plots, facts.
+
+\section{Discussion}
+
+5–7 pages
+
+Purpose: Show you can think critically.
+
+Why AlphaZero-style methods help (or don’t)
+
+Where belief modeling breaks
+
+What limits performance (compute, belief noise, training instability)
+
+Comparison to expectations from literature
+
+This is where you admit weaknesses intelligently.
+
+\section{Conclusion and Future Work}
+
+3–5 pages
+
+Purpose: Close the loop.
+
+Answer the research question directly
+
+Summarize what worked and what didn’t
+
+Concrete future work (not vague “more experiments”)
+
+\section{References}
+\printbibliography[heading=none]
+
+\end{document}

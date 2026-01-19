@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm[toml]>=3.4", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+license = { text = "Apache-2.0" }
+name = "azbsmcts"
+version = "0.1.0"
+description = "Alpha Go inspired AI for Phantom Go"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]",
+    "open-spiel",
+    "torch",
+    "optuna",
+    "matplotlib",
+]
+
+[dependency-groups]
+dev = [
+  "ruff",
+  "ipykernel",
+  "python-lsp-server",
+]
+
+[project.scripts]
+api = "main:main"
+train = "train:main"
+eval = "eval:main"
+tune = "tune:main"
+plot = "plot:main"
+
+
+
+[tool.uv]
+default-groups = ["dev"]

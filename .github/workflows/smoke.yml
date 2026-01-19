@@ -1,0 +1,55 @@
+name: smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *" # daily 02:00 UTC
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pipx install uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Smoke train
+        run: |
+          mkdir -p models runs plots
+          uv run train --games 8 --T 2 --S 2 --epochs 2 --seed 0 --out models/smoke.pt
+
+      - name: Smoke eval
+        run: |
+          AZ_MODEL_PATH=models/smoke.pt uv run eval match \
+            --a azbsmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 --out-json runs/smoke_eval.json
+
+      - name: Smoke plot
+        run: uv run plot
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: |
+            runs/smoke_eval.json
+            plots/
