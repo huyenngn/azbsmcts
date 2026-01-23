@@ -22,6 +22,7 @@ dev = [
   "ruff",
   "ipykernel",
   "python-lsp-server",
+  "pytest",
 ]
 
 [project.scripts]

@@ -26,8 +26,8 @@ class Node:
 
     def get_most_visited_action(self, actions: list[int] | None = None) -> int:
         if actions is None:
-            actions = list(self.edges.keys())
-        return max(actions, key=lambda a: self.edges[a].n)
+            actions = [a for a in self.edges.keys()]
+        return max(actions, key=lambda a: self.edges.get(a, EdgeStats()).n)
 
 
 class BeliefTree:
