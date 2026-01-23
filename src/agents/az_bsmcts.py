@@ -188,10 +188,8 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
 
         s = float(np.sum(probs))
         if s <= 0:
-            best_a = max(
-                (a for a in legal),
-                key=lambda a: root.edges.get(a, EdgeStats()).n,
-            )
+            # No legal moves had probability - fallback to most visited
+            best_a = root.get_most_visited_action(actions=list(legal))
             return int(best_a), pi
 
         probs /= s

@@ -1,21 +1,17 @@
 import argparse
 import json
 import os
+import pathlib
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import optuna
 import pyspiel
 import torch
 
-from eval import run_match
 from nets.tiny_policy_value import TinyPolicyValueNet
-from train import self_play, set_global_seeds, train_net
-
-
-def ensure_dir(p: Path):
-    p.mkdir(parents=True, exist_ok=True)
+from scripts import eval, train
+from utils import utils
 
 
 def main():
@@ -38,8 +34,8 @@ def main():
     parser.add_argument("--direction", type=str, default="maximize")
     args = parser.parse_args()
 
-    ensure_dir(Path("runs"))
-    set_global_seeds(args.seed, deterministic_torch=False)
+    utils.ensure_dir(pathlib.Path("runs"))
+    train.set_global_seeds(args.seed, deterministic_torch=False)
 
     game = pyspiel.load_game("phantom_go", {"board_size": args.board})
     tmp = game.new_initial_state()
@@ -58,8 +54,8 @@ def main():
         c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
 
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        run_dir = Path("runs") / f"{ts}_trial{trial.number:04d}"
-        ensure_dir(run_dir)
+        run_dir = pathlib.Path("runs") / f"{ts}_trial{trial.number:04d}"
+        utils.ensure_dir(run_dir)
 
         cfg = {
             "trial": trial.number,
@@ -84,7 +80,7 @@ def main():
             hidden=FIXED_HIDDEN,
         ).to(args.device)
 
-        examples, p0rets = self_play(
+        examples, p0rets = train.self_play(
             game=game,
             net=net,
             num_games=args.games,
@@ -96,7 +92,7 @@ def main():
         )
 
         metrics_path = run_dir / "train_metrics.jsonl"
-        train_net(
+        train.train_net(
             net=net,
             examples=examples,
             epochs=args.epochs,
@@ -118,7 +114,7 @@ def main():
         os.environ["AZ_C_PUCT"] = str(c_puct)
 
         # Evaluate vs baseline
-        res = run_match(
+        res = eval.run_match(
             game,
             a="azbsmcts",
             b="bsmcts",
@@ -168,7 +164,7 @@ def main():
         "best_run_dir": best.user_attrs.get("run_dir"),
         "arch": {"hidden": FIXED_HIDDEN},
     }
-    (Path("runs") / "optuna_best.json").write_text(
+    (pathlib.Path("runs") / "optuna_best.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
     print("\nBest trial:")

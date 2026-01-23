@@ -25,12 +25,11 @@ dev = [
 ]
 
 [project.scripts]
-api = "main:main"
-train = "train:main"
-eval = "eval:main"
-tune = "tune:main"
-plot = "plot:main"
-
+api = "scripts.api:main"
+train = "scripts.train:main"
+eval = "scripts.eval:main"
+tune = "scripts.tune:main"
+plot = "scripts.plot:main"
 
 
 [tool.uv]

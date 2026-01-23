@@ -1,10 +1,10 @@
 import argparse
 import json
+import pathlib
 import random
+import typing as t
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 import pyspiel
@@ -17,6 +17,7 @@ from belief.samplers.particle import (
     ParticleDeterminizationSampler,
 )
 from nets.tiny_policy_value import TinyPolicyValueNet
+from utils import utils
 
 
 @dataclass
@@ -43,10 +44,10 @@ def set_global_seeds(seed: int, deterministic_torch: bool = False):
             pass
 
 
-def make_run_dir(prefix: str, seed: int) -> Path:
+def make_run_dir(prefix: str, seed: int) -> pathlib.Path:
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_dir = Path("runs") / f"{ts}_{prefix}_seed{seed}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = pathlib.Path("runs") / f"{ts}_{prefix}_seed{seed}"
+    utils.ensure_dir(run_dir)
     return run_dir
 
 
@@ -68,12 +69,12 @@ def self_play(
     seed: int,
     temperature: float,
     device: str,
-) -> Tuple[List[Example], List[float]]:
+) -> t.Tuple[t.List[Example], t.List[float]]:
     rng = random.Random(seed)
 
     num_actions = game.num_distinct_actions()
-    examples: List[Example] = []
-    p0_returns: List[float] = []
+    examples: t.List[Example] = []
+    p0_returns: t.List[float] = []
 
     for _ in range(num_games):
         state = game.new_initial_state()
@@ -109,7 +110,7 @@ def self_play(
             device=device,
         )
 
-        traj: List[Tuple[np.ndarray, np.ndarray, int]] = []
+        traj: t.List[t.Tuple[np.ndarray, np.ndarray, int]] = []
 
         while not state.is_terminal():
             p = state.current_player()
@@ -146,7 +147,7 @@ def self_play(
 
 def train_net(
     net: TinyPolicyValueNet,
-    examples: List[Example],
+    examples: t.List[Example],
     epochs: int,
     batch_size: int,
     lr: float,
@@ -215,29 +216,31 @@ def train_net(
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--deterministic-torch", action="store_true")
+
     parser.add_argument("--games", type=int, default=50)
     parser.add_argument("--T", type=int, default=8)
     parser.add_argument("--S", type=int, default=4)
+
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--temp", type=float, default=1.0)
-    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, default="models/model.pt")
-    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--run-name", type=str, default="aztrain")
-    parser.add_argument("--deterministic-torch", action="store_true")
     parser.add_argument("--logdir", type=str, default="")
     args = parser.parse_args()
 
     set_global_seeds(args.seed, deterministic_torch=args.deterministic_torch)
 
     run_dir = (
-        Path(args.logdir)
+        pathlib.Path(args.logdir)
         if args.logdir
         else make_run_dir(args.run_name, args.seed)
     )
-    run_dir.mkdir(parents=True, exist_ok=True)
+    utils.ensure_dir(run_dir)
 
     config = vars(args).copy()
     with (run_dir / "config.json").open("w", encoding="utf-8") as f:
@@ -280,8 +283,8 @@ def main():
         metrics_path=metrics_path,
     )
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path = pathlib.Path(args.out)
+    utils.ensure_dir(out_path.parent)
     torch.save(net.state_dict(), str(out_path))
     print(f"saved: {out_path}")
 

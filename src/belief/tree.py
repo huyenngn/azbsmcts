@@ -24,6 +24,11 @@ class Node:
     legal_actions: List[int] = field(default_factory=list)
     n: int = 0  # node visit count
 
+    def get_most_visited_action(self, actions: list[int] | None = None) -> int:
+        if actions is None:
+            actions = list(self.edges.keys())
+        return max(actions, key=lambda a: self.edges[a].n)
+
 
 class BeliefTree:
     """

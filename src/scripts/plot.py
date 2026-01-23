@@ -1,12 +1,14 @@
 import argparse
 import json
-from pathlib import Path
-from typing import Any, Dict, List
+import pathlib
+import typing as t
 
 import matplotlib.pyplot as plt
 
+from utils import utils
 
-def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+
+def read_jsonl(path: pathlib.Path) -> t.List[t.Dict[str, t.Any]]:
     rows = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -17,7 +19,7 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def plot_run(metrics_path: Path, out_dir: Path):
+def plot_run(metrics_path: pathlib.Path, out_dir: pathlib.Path):
     rows = read_jsonl(metrics_path)
     if not rows:
         return
@@ -62,9 +64,9 @@ def main():
     parser.add_argument("--combined", action="store_true")
     args = parser.parse_args()
 
-    runs_dir = Path(args.runs)
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    runs_dir = pathlib.Path(args.runs)
+    out_dir = pathlib.Path(args.out)
+    utils.ensure_dir(out_dir)
 
     metric_files = sorted(runs_dir.glob(args.pattern))
     if not metric_files:

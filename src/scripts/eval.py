@@ -1,11 +1,11 @@
 import argparse
 import json
 import os
+import pathlib
 import random
+import typing as t
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pyspiel
@@ -15,6 +15,8 @@ from belief.samplers.particle import (
     ParticleBeliefSampler,
     ParticleDeterminizationSampler,
 )
+from scripts import train
+from utils import utils
 
 
 @dataclass
@@ -25,11 +27,6 @@ class Result:
     draws: int = 0
     p0_return_sum: float = 0.0
     p1_return_sum: float = 0.0
-
-
-def set_global_seeds(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
 
 
 def _obs_size_for_player(game: pyspiel.Game, player_id: int) -> int:
@@ -111,7 +108,7 @@ def play_game(
     S: int,
     seed: int,
     device: str,
-) -> Tuple[float, float]:
+) -> t.Tuple[float, float]:
     rng = random.Random(seed)
     state = game.new_initial_state()
 
@@ -172,8 +169,8 @@ def run_match(
     S: int,
     seed: int,
     device: str,
-) -> Dict[str, Result]:
-    out: Dict[str, Result] = {}
+) -> t.Dict[str, Result]:
+    out: t.Dict[str, Result] = {}
 
     res_ab = Result()
     for i in range(n):
@@ -191,7 +188,7 @@ def run_match(
 
 
 def _az_winrate_from_run_match(
-    res: Dict[str, Result], az_label: str = "azbsmcts"
+    res: t.Dict[str, Result], az_label: str = "azbsmcts"
 ) -> float:
     items = list(res.items())
     r1 = items[0][1]
@@ -207,18 +204,20 @@ def _az_winrate_from_run_match(
     return az_wins / max(1, total)
 
 
-def _find_run_dirs(runs_root: Path) -> List[Path]:
+def _find_run_dirs(runs_root: pathlib.Path) -> t.List[pathlib.Path]:
     return sorted(
         [p for p in runs_root.glob("*") if (p / "model.pt").exists()]
     )
 
 
-def _load_config(run_dir: Path) -> Dict[str, Any]:
+def _load_config(run_dir: pathlib.Path) -> t.Dict[str, t.Any]:
     cfg = run_dir / "config.json"
     return json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}
 
 
-def _extract_x(run_dir: Path, cfg: Dict[str, Any], x_axis: str) -> float:
+def _extract_x(
+    run_dir: pathlib.Path, cfg: t.Dict[str, t.Any], x_axis: str
+) -> float:
     if x_axis == "games":
         if "games" in cfg:
             return float(cfg["games"])
@@ -226,7 +225,7 @@ def _extract_x(run_dir: Path, cfg: Dict[str, Any], x_axis: str) -> float:
 
 
 def cmd_match(args):
-    set_global_seeds(args.seed)
+    train.set_global_seeds(args.seed)
     game = pyspiel.load_game("phantom_go", {"board_size": args.board})
 
     matchups = [(args.a, args.b)]
@@ -261,8 +260,8 @@ def cmd_match(args):
             )
 
     if args.out_json:
-        outp = Path(args.out_json)
-        outp.parent.mkdir(parents=True, exist_ok=True)
+        outp = pathlib.Path(args.out_json)
+        utils.ensure_dir(outp.parent)
         outp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"\nwrote: {outp}")
 
@@ -270,12 +269,12 @@ def cmd_match(args):
 def cmd_sweep(args):
     import matplotlib.pyplot as plt
 
-    set_global_seeds(args.seed)
+    train.set_global_seeds(args.seed)
     game = pyspiel.load_game("phantom_go", {"board_size": args.board})
 
-    runs_root = Path(args.runs)
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    runs_root = pathlib.Path(args.runs)
+    outdir = pathlib.Path(args.outdir)
+    utils.ensure_dir(outdir)
 
     run_dirs = _find_run_dirs(runs_root)
     if not run_dirs:
@@ -361,28 +360,32 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p1 = sub.add_parser("match")
-    p1.add_argument("--a", type=str, default="azbsmcts")
-    p1.add_argument("--b", type=str, default="bsmcts")
-    p1.add_argument("--flip-colors", action="store_true")
-    p1.add_argument("--n", type=int, default=20)
-    p1.add_argument("--T", type=int, default=8)
-    p1.add_argument("--S", type=int, default=4)
     p1.add_argument("--seed", type=int, default=0)
     p1.add_argument("--device", type=str, default="cpu")
     p1.add_argument("--board", type=int, default=9)
+
+    p1.add_argument("--n", type=int, default=20)
+    p1.add_argument("--T", type=int, default=8)
+    p1.add_argument("--S", type=int, default=4)
+
+    p1.add_argument("--a", type=str, default="azbsmcts")
+    p1.add_argument("--b", type=str, default="bsmcts")
+    p1.add_argument("--flip-colors", action="store_true")
     p1.add_argument("--out-json", type=str, default="")
     p1.set_defaults(func=cmd_match)
 
     p2 = sub.add_parser("sweep")
-    p2.add_argument("--runs", type=str, default="runs")
-    p2.add_argument("--outdir", type=str, default="plots")
-    p2.add_argument("--x-axis", type=str, default="games", choices=["games"])
-    p2.add_argument("--n", type=int, default=20)
-    p2.add_argument("--T", type=int, default=8)
-    p2.add_argument("--S", type=int, default=4)
     p2.add_argument("--seed", type=int, default=0)
     p2.add_argument("--device", type=str, default="cpu")
     p2.add_argument("--board", type=int, default=9)
+
+    p2.add_argument("--n", type=int, default=20)
+    p2.add_argument("--T", type=int, default=8)
+    p2.add_argument("--S", type=int, default=4)
+
+    p2.add_argument("--runs", type=str, default="runs")
+    p2.add_argument("--outdir", type=str, default="plots")
+    p2.add_argument("--x-axis", type=str, default="games", choices=["games"])
     p2.set_defaults(func=cmd_sweep)
 
     args = parser.parse_args()

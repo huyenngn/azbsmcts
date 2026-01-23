@@ -50,7 +50,7 @@ class BSMCTSAgent(BaseAgent):
             for _ in range(self.S):
                 self._search(gamma.clone())
 
-        return max(root.edges.items(), key=lambda kv: kv[1].n)[0]
+        return root.get_most_visited_action()
 
     def _expand(self, node: Node, state: pyspiel.State):
         node.is_expanded = True

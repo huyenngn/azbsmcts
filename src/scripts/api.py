@@ -1,31 +1,32 @@
 import enum
 import logging
 import os
+import pathlib
 import random
 import re
 import urllib.request
 import uuid
-from pathlib import Path
 
+import fastapi
 import pydantic
 import pyspiel
 import uvicorn
-from fastapi import FastAPI, HTTPException
 
 from agents import AZBSMCTSAgent, BSMCTSAgent
 from belief.samplers.particle import (
     ParticleBeliefSampler,
     ParticleDeterminizationSampler,
 )
+from utils import utils
 
 DEMO_MODEL_URL = "https://github.com/huyenngn/alphaghost/releases/download/demo-model/demo_model.pt"
-DEFAULT_DEMO_MODEL_PATH = Path("models/demo_model.pt")
+DEFAULT_DEMO_MODEL_PATH = pathlib.Path("models/demo_model.pt")
 
 
 logger = logging.getLogger("phantom_go_api")
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI()
+app = fastapi.FastAPI()
 app.state.games = {}
 
 
@@ -59,8 +60,8 @@ class GameStateResponse(pydantic.BaseModel):
     returns: list[float] = []
 
 
-def ensure_demo_model(path: Path) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _ensure_demo_model(path: pathlib.Path) -> str:
+    utils.ensure_dir(path.parent)
     if path.exists():
         return str(path)
 
@@ -68,7 +69,7 @@ def ensure_demo_model(path: Path) -> str:
     try:
         urllib.request.urlretrieve(DEMO_MODEL_URL, str(path))
     except Exception as e:
-        raise HTTPException(
+        raise fastapi.HTTPException(
             status_code=500,
             detail=f"Failed to download demo model from release 'demo-model': {e}",
         )
@@ -105,10 +106,10 @@ def _build_agent(game: pyspiel.Game, policy: str, ai_id: int):
         return agent, particle
 
     if policy == "azbsmcts":
-        requested_path = Path(
+        requested_path = pathlib.Path(
             os.environ.get("AZ_MODEL_PATH", str(DEFAULT_DEMO_MODEL_PATH))
         )
-        model_path = ensure_demo_model(requested_path)
+        model_path = _ensure_demo_model(requested_path)
 
         agent = AZBSMCTSAgent(
             player_id=ai_id,
@@ -201,7 +202,9 @@ def root():
 @app.post("/start")
 def start_game(request: StartGameRequest) -> GameStateResponse:
     if request.player_id not in (0, 1):
-        raise HTTPException(status_code=400, detail="player_id must be 0 or 1")
+        raise fastapi.HTTPException(
+            status_code=400, detail="player_id must be 0 or 1"
+        )
 
     game = pyspiel.load_game("phantom_go", {})
     state = game.new_initial_state()
@@ -239,19 +242,18 @@ def start_game(request: StartGameRequest) -> GameStateResponse:
 def make_move(request: MakeMoveRequest) -> GameStateResponse:
     session = app.state.games.get(request.game_id)
     if session is None:
-        raise HTTPException(status_code=404, detail="Unknown game_id")
+        raise fastapi.HTTPException(status_code=404, detail="Unknown game_id")
 
     state = session["state"]
     human_id = session["human_id"]
 
     if state.is_terminal():
-        raise HTTPException(status_code=400, detail="Game is over")
+        raise fastapi.HTTPException(status_code=400, detail="Game is over")
 
     if state.current_player() != human_id:
-        raise HTTPException(status_code=400, detail="Not your turn")
-
+        raise fastapi.HTTPException(status_code=400, detail="Not your turn")
     if request.action not in state.legal_actions():
-        raise HTTPException(status_code=400, detail="Illegal action")
+        raise fastapi.HTTPException(status_code=400, detail="Illegal action")
 
     actor = state.current_player()
     state.apply_action(request.action)

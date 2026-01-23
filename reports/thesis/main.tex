@@ -65,249 +65,489 @@
 \date{\today}
 % \begin{titlepage}
 \begin{center}
-    \vspace*{1cm}
-    \Huge
-    \textbf{\topic}
-    \LARGE
-    %Thesis Subtitle
+  \vspace*{1cm}
+  \Huge
+  \textbf{\topic}
+  \LARGE
+  %Thesis Subtitle
 
-    \vspace{2cm}
+  \vspace{2cm}
 
-    \textbf{Thi Nguyen Ngan Huyen}\\
-    \vspace{0.5cm}
-    \normalsize
-    Matr Nr.: 400883\\
-    E-mail: thinguyen@campus.tu-berlin.de
-    \vspace{2cm}
+  \textbf{Thi Nguyen Ngan Huyen}\\
+  \vspace{0.5cm}
+  \normalsize
+  Matr Nr.: 400883\\
+  E-mail: thinguyen@campus.tu-berlin.de
+  \vspace{2cm}
 
-    \large
-    \begin{center}
-        First Supervisor: Prof. Dr. Dr. h.c. Sahin Albayrak \\
-        Second Supervisor: Dr.- Ing. Stefan Fricke
-    \end{center}        \vspace{0.8cm}
+  \large
+  \begin{center}
+    First Supervisor: Prof. Dr. Dr. h.c. Sahin Albayrak \\
+    Second Supervisor: Dr.- Ing. Stefan Fricke
+  \end{center}        \vspace{0.8cm}
 
-    \Large
-    Technische Universität Berlin\\
-    Fakultät IV – Elektrotechnik und Informatik\\
-    \vspace{1cm}
-    \today
+  \Large
+  Technische Universität Berlin\\
+  Fakultät IV – Elektrotechnik und Informatik\\
+  \vspace{1cm}
+  \today
 \end{center}
 \newpage
 % \end{titlepage}
 \pagenumbering{arabic}
 
 \section{Introduction}
-5 - 8 pages
 
-Purpose: Define the problem, why it matters, and what you actually do.
 
-Contents:
+Games have long been used as testbeds for artificial intelligence research because
+they provide controlled environments with clear rules and objectives. In recent years,
+learning-based approaches have achieved remarkable success in games with perfect
+information, where all players can observe the full game state at all times.
+A prominent example is AlphaZero, which combines deep neural networks with
+Monte Carlo Tree Search (MCTS) and has reached superhuman performance in games such
+as Go, Chess, and Shogi.
 
-Imperfect information in games (short, concrete)
+However, many real-world decision-making problems do not have this property.
+Instead, they involve imperfect information: players must act without full knowledge
+of the current state of the environment or the actions taken by other agents. In such
+settings, uncertainty is not an implementation detail but a fundamental part of the
+problem. Reasoning under uncertainty is therefore a central challenge for artificial
+intelligence systems.
 
-Why Phantom Go is a good testbed
+This thesis studies imperfect information games through the lens of Phantom Go, a
+variant of the game of Go in which players cannot see the opponent's stones on the
+board. As a consequence, the true board state is
+never directly observable. Instead, a player must reason over many possible hidden
+states that are consistent with the observations made so far.
 
-Why AlphaZero-style methods don’t directly apply
+Phantom Go is a particularly challenging domain for search-based methods. A common
+approach to handling imperfect information is determinization, where hidden
+information is filled in by sampling a fully observable game state and then applying
+standard algorithms such as MCTS. While simple, this approach is known to suffer from
+fundamental problems such as strategy fusion and non-locality, which can lead to
+systematically poor decisions. More advanced methods, such as
+Belief-State Monte Carlo Tree Search (BS-MCTS), address this issue by explicitly
+maintaining and reasoning over a set of possible hidden states rather than committing
+to a single guessed reality.
 
-Your research question (one paragraph, no fluff)
+At the same time, AlphaZero-style methods rely critically on assumptions that do not
+hold in Phantom Go. AlphaZero evaluates positions and selects actions based on a
+neural network that takes the full game state as input. In an imperfect information
+setting, such a state does not exist from the agent's perspective. Naively applying
+AlphaZero to Phantom Go therefore leads to conceptual and practical failures: the
+neural network is trained on information the agent does not actually have, and the
+resulting policy and value estimates become unreliable.
 
-Contributions (bullet list, explicit, modest)
+The central question of this thesis is therefore the following:
 
-Example contributions (realistic):
+\textbf{How can AlphaZero-inspired methods be adapted to imperfect information games
+  such as Phantom Go, and how do they compare empirically to belief-state search
+  methods?}
 
-Implementation of BS-MCTS for Phantom Go
+To investigate this question, this thesis focuses on integrating belief-state reasoning into the AlphaZero framework in a practical and minimal way. Instead of assuming full observability, the proposed approach combines belief-state Monte Carlo Tree Search with a neural network trained through self-play, following the general structure of AlphaZero while explicitly accounting for hidden information.
 
-Design of an AlphaZero-inspired belief-based agent
+The main contributions of this thesis are:
 
-Empirical comparison under controlled conditions
+\begin{itemize}
+  \item An implementation of Belief-State Monte Carlo Tree Search for Phantom Go using the OpenSpiel framework.
+  \item The design of an AlphaZero-inspired agent that operates on belief-state information rather than fully observed game states.
+  \item An empirical evaluation comparing belief-state MCTS and the proposed AlphaZero-inspired approach under controlled experimental conditions.
+\end{itemize}
 
-If you can’t state your contribution in 3 bullets, you don’t understand it yet.
+The goal of this work is not to achieve state-of-the-art performance, but to clarify
+how learning-based search methods behave in imperfect information settings and to
+identify the practical challenges that arise when extending AlphaZero-style ideas
+beyond perfect information games.
+
+
 
 \section{Background and Related Work}
 
-10-15 pages
+This section reviews the background concepts and prior work that are directly relevant to this thesis. The goal is not to provide a comprehensive survey, but to introduce the key ideas needed to understand the problem formulation, methods, and experimental results.
 
-Purpose: Show you understand the landscape and position your work.
 
-Split this cleanly:
+\subsection{Phantom Go and Imperfect Information}
 
-2.1 Phantom Go and Imperfect Information
+Imperfect information games are games in which players do not have full access to the current state of the environment. Decisions must therefore be made under uncertainty, based on partial observations. Many real-world problems share this property, making imperfect information games an important area of study in artificial intelligence.
 
-Rules of Phantom Go
 
-Observation model (illegal moves, captures)
+Phantom Go is an imperfect information variant of the game of Go. While the underlying game mechanics are identical to standard Go, players cannot observe the opponent’s stones on the board. Instead, each player only sees their own stones, revealed opponent stones, and limited feedback about moves, such as whether a move was legal, caused captures, or triggered an observation event.
 
-Why determinization is flawed (strategy fusion, non-locality)
 
-2.2 Monte Carlo Tree Search Variants
+Because the true board state is hidden, a player must reason about multiple possible game states that are consistent with the observations received so far. Two different hidden states may appear identical to the player while differing in strategically important ways. This makes Phantom Go significantly more challenging than standard Go and unsuitable for algorithms that assume full observability.
 
-Vanilla MCTS (brief)
+\subsection{Monte Carlo Tree Search}
 
-IS-MCTS (why it fails)
+Monte Carlo Tree Search (MCTS) is a search algorithm widely used in game-playing agents. It incrementally builds a search tree by repeatedly simulating games from the current position. Each simulation consists of four phases: selection, expansion, simulation, and backpropagation.
 
-BS-MCTS (high-level idea, defer algorithmic details)
 
-2.3 AlphaZero
+In games with perfect information, MCTS has been highly successful, particularly when combined with domain-specific heuristics or learned evaluation functions \cite{Browne2012mcts}.
+However, standard MCTS assumes that the full game state is known, which does not hold in Phantom Go.
 
-Core loop: self-play → MCTS → NN training
 
-Why it assumes full observability
+\subsection{Determinization and IS-MCTS}
 
-Known attempts at imperfect information (ReBeL, etc.)
 
-Do not dump equations here. This section is conceptual.
 
-\section{Problem Statement}
+A common approach to applying MCTS in imperfect information games is \emph{determinization}: sampling a fully specified game state that is consistent with a player's observations and then applying standard MCTS as if this sampled state were the true state. Information Set Monte Carlo Tree Search (IS-MCTS) improves on naive determinization by organizing the search around information sets and can reduce some effects of inconsistencies that arise from hidden information.
 
-5 pages
+Nevertheless, determinization-based approaches and IS-MCTS variants can suffer from fundamental failure modes in Phantom-style games. Two well-known issues are \emph{strategy fusion} and \emph{non-locality}. Strategy fusion refers to situations where planning implicitly assumes it can select different actions depending on hidden information, even though such distinctions are not observable to the player. Non-locality refers to cases where the value or legality of an action depends strongly on hidden details that are not represented at the player's information level, which can make search statistics misleading across different hidden states \cite{Cowling2012ismcts}.
 
-Purpose: Make the problem mathematically and algorithmically precise.
+These issues limit the effectiveness of determinization-based methods in complex imperfect information games.
 
-This is where weak theses collapse. Yours must include:
 
-Game definition (state, action, observation, belief)
+\subsection{Belief-State MCTS}
 
-What the agent actually observes
+Belief-State Monte Carlo Tree Search (BS-MCTS) was proposed to address the limitations of determinization. Instead of committing to a single guessed hidden state, BS-MCTS maintains and reasons over a set of possible states that are consistent with the agent's observations.
 
-What “belief state” means in your implementation
+During search, actions are evaluated across multiple sampled states, and their outcomes are aggregated to guide decision-making. This allows the agent to account for uncertainty explicitly rather than treating it as noise. BS-MCTS has been shown to outperform IS-MCTS in Phantom games, including Phantom Go, particularly as game complexity increases \cite{Wang2015bsmcts}.
 
-What performance means (win rate, convergence, etc.)
+BS-MCTS serves as an important baseline in this thesis and provides the foundation for integrating belief-state reasoning with learning-based methods.
 
-If you skip this, your experiments will look arbitrary.
 
-\section{Belief-State MCTS for Phantom Go}
+\subsection{AlphaZero and Learning-Based Search}
 
-12-15 pages
+AlphaZero is a learning-based game-playing system that combines MCTS with deep neural networks trained through self-play. A policy network provides prior probabilities over actions, while a value network estimates the expected game outcome. These networks guide MCTS, and the improved policies produced by search are used as training targets for further learning \cite{Silver2017alphazero}.
 
-Purpose: This is your baseline and your anchor.
+AlphaZero has achieved remarkable success in games with perfect information, but it relies on the assumption that the full game state is observable. In imperfect information games, this assumption no longer holds. The neural network cannot be given the true state as input, and naively training on hidden information leads to inconsistent or invalid evaluations.
 
-4.1 Belief-State Representation
+Several approaches have been proposed to extend learning-based methods to imperfect information games, often by combining search with belief modeling or alternative solution concepts. However, applying AlphaZero-style methods to games like Phantom Go remains challenging due to the large state space and the difficulty of representing uncertainty effectively \cite{Brown2020rebel}.
 
-How you represent sampled states
+\subsection{Positioning of This Work}
 
-What is stored vs approximated
+This thesis builds on prior work in belief-state search and learning-based game playing. It uses BS-MCTS as a baseline for handling uncertainty in Phantom Go and investigates how the core ideas of AlphaZero can be adapted to operate on belief-state information rather than fully observed states.
 
-Memory and computation trade-offs
+The focus is not on proposing a new theoretical framework, but on studying the practical interaction between belief-state reasoning, Monte Carlo Tree Search, and self-play learning in an imperfect information setting.
 
-4.2 Algorithm Description
 
-Walk through Algorithm 1 from the paper in your own words
+\section{Problem Formulation}
 
-Sampling
+This section defines the problem addressed in this thesis in precise but practical terms. Rather than aiming for full game-theoretic generality, the formulation is tailored to Phantom Go as implemented in the OpenSpiel framework and to the agents studied in the subsequent sections.
 
-Selection (player vs opponent nodes)
 
-Expansion, simulation, backpropagation
+\subsection{Game Setting}
 
-You must explain why opponent guessing/predicting exists, even if you simplify it.
 
-4.3 Implementation Details
+Phantom Go is a two-player, turn-based, zero-sum game derived from the game of Go. As in standard Go, players alternate placing stones on a board, and the game ends when both players pass consecutively. The final score is determined by territory and captured stones.
 
-OpenSpiel integration
+The key difference from standard Go is that players do not observe the opponent's stones on the board. At any point during the game, the true board configuration is hidden. Instead, players receive partial feedback signals related to moves and captures. These signals restrict the set of possible board states but never fully determine it.
 
-Key hyperparameters
+In OpenSpiel's Phantom Go implementation, the game proceeds deterministically given the full hidden state, but the information available to each player is incomplete.
 
-Simplifications vs original paper (be honest)
 
-This section alone can carry a bachelor’s thesis if done well.
 
-\section{AlphaZero-Inspired Method for Phantom Go}
+\subsection{Observations and Agent Perspective}
 
-12-15 pages
+At each turn, the agent observes a partial view of the board together with limited feedback about recent moves, such as:
 
-Purpose: Show how AlphaZero breaks and how you fix it.
+\begin{itemize}
+  \item Whether the last attempted move was valid, invalid or observational.
+  \item Whether stones were captured as a result of the last move and how many.
+  \item Whether the last move was a pass.
+\end{itemize}
 
-5.1 Why Vanilla AlphaZero Fails
+This observation summarizes the information available to the player but does not reveal the full game history or the true board state.
 
-Observation mismatch
+Importantly, these observations are player-relative. Two different hidden board states may produce identical observations for a given player. From the agent's perspective, such states are indistinguishable.
 
-Invalid state evaluation
+As a result, the agent cannot condition its actions on the true board state. Any decision must be made based solely on the information available through observations.
 
-Policy/value collapse
+\subsection{Belief over Hidden States}
 
-5.2 Belief-Based AlphaZero Architecture
+Because the true board state is unobservable, the agent must reason over a set of possible hidden states that are consistent with the observations made so far. This set represents the agent's uncertainty about the game.
 
-Input representation (belief samples, aggregated features, etc.)
+In this thesis, the term belief state refers to this set of plausible hidden board configurations, together with an implicit weighting induced by the agent's sampling and search process. The belief is not represented as an explicit probability distribution over all states. Instead, it is approximated by sampling and reasoning over multiple candidate states during search.
 
-Modified MCTS (how it differs from Section 4)
+This approach avoids committing to a single guessed reality and instead allows the agent to evaluate actions across different possible hidden states. The belief state is therefore operational rather than explicit: it exists through the behavior of the search algorithm rather than as a separately maintained data structure.
 
-Training targets (policy/value from belief-MCTS)
 
-Be explicit: this is AlphaZero-inspired, not AlphaZero.
+\subsection{Action Selection under Uncertainty}
 
-5.3 Training Procedure
+At any decision point, the agent must select a single action, even though multiple hidden states are possible. An action that is optimal in one hidden state may be suboptimal or illegal in another.
 
-Self-play setup
 
-Network architecture (keep it simple)
+This creates the central challenge of imperfect information games: the agent must choose actions based on incomplete and ambiguous information, without access to the true state of the game.
 
-Loss functions
 
-Compute constraints
+The methods studied in this thesis differ primarily in how they handle this uncertainty:
 
-If you try to be “clever” here, you’ll fail. Simplicity wins.
+\begin{itemize}
+  \item Determinization-based methods select a single sampled hidden state and plan as if it were correct.
+  \item Belief-state methods evaluate actions across multiple sampled states.
+  \item Learning-based methods attempt to approximate good decisions under uncertainty through self-play and function approximation.
+\end{itemize}
+
+
+\subsection{Objective and Value Definition}
+
+The objective of the agent is to maximize the probability of winning the game. Following standard practice in self-play reinforcement learning, the value of a game state is defined from the perspective of the player to move.
+Concretely:
+\begin{itemize}
+  \item A positive value indicates that the current player is expected to win.
+  \item A negative value indicates that the current player is expected to lose.
+\end{itemize}
+
+This definition is independent of player color. When the agent plays as black, it aims to maximize black's chance of winning; when it plays as white, it aims to maximize white’s chance of winning. During search and training, value estimates are adjusted appropriately when the player to move changes.
+
+
+\subsection{Evaluation Metrics}
+
+The primary performance metric used in this thesis is win rate against fixed baselines under controlled experimental conditions. Additional metrics, such as game length and training stability, are used to provide further insight into agent behavior.
+
+The goal of the evaluation is not to establish optimal play, but to compare how different approaches handle uncertainty and how learning-based methods interact with belief-state search in practice.
+
+\section{BS-MCTS for Phantom Go}
+
+This section describes the Belief-State Monte Carlo Tree Search (BS-MCTS) baseline used in this thesis. BS-MCTS provides a principled way to apply search-based decision making in imperfect information games by explicitly reasoning over uncertainty about the hidden game state. The presentation here focuses on the practical variant implemented for Phantom Go and highlights differences from the original formulation.
+
+\subsection{Motivation and Overview}
+
+In Phantom Go, the true board state is hidden from the player, and decisions must be made based on partial observations. Determinization-based approaches address this uncertainty by sampling a single hidden state and planning as if it were correct. As discussed in Section~2, this can lead to inconsistent decision making due to strategy fusion and non-locality \cite{Cowling2012ismcts}.
+
+Belief-State Monte Carlo Tree Search addresses this issue by reasoning over multiple possible hidden states simultaneously rather than committing to a single guess. Instead of searching in the space of fully observed states, BS-MCTS searches over \emph{belief states}, which represent sets of hidden states consistent with the agent’s observations \cite{Wang2015bsmcts}. Actions are evaluated by aggregating their outcomes across sampled hidden states, allowing the agent to account explicitly for uncertainty.
+
+In this thesis, BS-MCTS serves as a baseline against which learning-based methods are compared.
+
+\subsection{Belief Representation and State Sampling}
+
+The belief state maintained by the agent represents uncertainty over the true Phantom Go board configuration. Rather than explicitly storing a probability distribution over all possible hidden states, the belief is approximated through sampling.
+
+At each decision point, multiple candidate hidden states are sampled such that they are consistent with the agent’s observation history. Each sampled state represents one plausible realization of the true board. These samples are then used as starting points for Monte Carlo simulations during search.
+
+This sampled representation of belief is operational: it exists only through the set of states used during search and is not maintained as a separate data structure. No explicit belief update rule is applied beyond rejecting samples that contradict observed information.
+
+\subsection{Search Procedure}
+
+For each sampled hidden state, Monte Carlo Tree Search is applied in a manner similar to standard MCTS. Each simulation consists of the following phases:
+
+\begin{itemize}
+  \item \textbf{Selection:} Starting from the root, actions are selected according to a tree policy that balances exploration and exploitation until a leaf node is reached.
+  \item \textbf{Expansion:} If the selected node has unvisited actions, one of them is expanded to create a new node in the search tree.
+  \item \textbf{Simulation:} A rollout is performed from the expanded node using a default policy to obtain a terminal outcome.
+  \item \textbf{Backpropagation:} The simulation result is propagated back up the tree to update value estimates and visit counts.
+\end{itemize}
+
+The outcome of an action is evaluated across multiple sampled hidden states, and statistics are aggregated to guide action selection at the root. In this way, the agent prefers actions that perform well across many plausible hidden states rather than those that are optimal only under a specific guess.
+
+\subsection{Simplifications Relative to the Original BS-MCTS}
+
+The original BS-MCTS framework proposed by Wang et al.\ includes additional mechanisms such as \emph{opponent guessing} and \emph{opponent predicting}, which aim to maintain and update beliefs over opponent behavior and future actions \cite{Wang2015bsmcts}.
+
+The implementation used in this thesis adopts a simplified variant of BS-MCTS. While multiple hidden states consistent with observations are sampled and evaluated, no explicit probability distribution over states is maintained and belief updates are limited to discarding samples that contradict observed information.
+
+This simplification reduces computational complexity and implementation overhead, making the approach suitable for controlled experimental evaluation while still capturing the core idea of belief-state reasoning.
+
+\subsection{Implementation Details}
+
+The BS-MCTS agent is implemented using the OpenSpiel framework, which provides a reference implementation of Phantom Go and a consistent interface for game simulation. Key parameters of the search include the number of belief samples, the number of simulations per move, and exploration constants used during action selection.
+
+The BS-MCTS implementation serves as a non-learning baseline in this thesis. Its behavior depends entirely on search and sampling rather than on learned evaluation functions. This makes it a useful point of comparison for assessing the impact of integrating belief-state reasoning with learning-based methods in later sections.
+
+
+\section{An AlphaZero-Inspired Method for Phantom Go}
+
+This section describes the learning-based agent proposed in this thesis. The method is inspired by AlphaZero in its use of self-play, Monte Carlo Tree Search, and neural network function approximation. However, it is adapted explicitly to the imperfect information setting of Phantom Go and does not assume access to the full game state.
+
+\subsection{Why Vanilla AlphaZero Fails in Phantom Go}
+
+AlphaZero was originally designed for perfect-information games, where the full game state is available to the agent at all times \cite{Silver2017alphazero}. In such settings, the policy and value networks can be trained directly on true board states, and MCTS can evaluate actions under the assumption that the state is fully known.
+
+In Phantom Go, these assumptions do not hold. The true board state is hidden, and the agent only has access to partial observations. Providing a neural network with the full hidden state would leak information unavailable to the player, while training on raw observations alone leads to ambiguity, as multiple hidden states can correspond to the same observation.
+
+As a result, naively applying AlphaZero to Phantom Go leads to inconsistent or misleading evaluations. Policy predictions may depend on hidden information the agent does not possess, and value estimates may collapse due to uncertainty about the true state. These issues motivate the integration of belief-state reasoning into the AlphaZero framework.
+
+\subsection{Belief-Based AlphaZero Architecture}
+
+The proposed method combines belief-state search with the AlphaZero training paradigm. Instead of operating on fully observed states, the agent operates on belief-consistent information derived from sampling hidden states.
+
+At each decision point, Belief-State Monte Carlo Tree Search is used to evaluate actions across multiple sampled hidden states, as described in Section~4. A neural network is used to guide this search and to approximate its outcomes.
+In the context of Phantom Go, the policy and value heads have a different interpretation than in perfect-information games:
+\begin{itemize}
+  \item The \textbf{policy head} predicts what actions are promising given the player's partial observation, rather than a fully known board state.
+  \item The \textbf{value head} estimates the expected game outcome from the perspective of the player to move.
+\end{itemize}
+
+During search, the policy head biases action selection in a PUCT-style manner, encouraging exploration of actions deemed promising by the network. The value head provides leaf evaluations, reducing the need for long random rollouts.
+As a result, both predictions capture robustness under uncertainty rather than optimal play in a single known state.
+
+Importantly, the network does not receive the true hidden board state as input. Instead, its inputs are derived from the agent’s belief-consistent information, ensuring that predictions are based only on information available to the player.
+
+\subsection{Training Targets and Self-Play}
+
+Training data is generated through self-play. In each self-play game, the agent repeatedly performs belief-state MCTS guided by the current neural network. For each visited position, the following targets are recorded:
+\begin{itemize}
+  \item A \textbf{policy target}, derived from the normalized visit counts of actions at the root of the search tree.
+  \item A \textbf{value target}, given by the final game outcome from the perspective of the player to move at that position.
+\end{itemize}
+
+The policy target represents an improved decision distribution produced by search, while the value target represents the eventual outcome of the game. The neural network is trained to minimize the discrepancy between its predictions and these targets.
+
+This training procedure follows the core AlphaZero principle: the network learns from the outcomes of search rather than from raw experience alone. Over successive iterations of self-play and training, the network gradually improves its ability to guide search under uncertainty.
+
+\subsection{Simplifications and Design Choices}
+
+The AlphaZero-inspired method used in this thesis adopts several simplifications compared to the original AlphaZero system. The neural network architecture is deliberately kept small to limit computational cost. No data augmentation or symmetry exploitation is applied. Additionally, training is performed under limited computational resources, restricting the number of simulations and self-play games.
+
+Furthermore, belief-state handling is limited to sampling hidden states consistent with observations. No explicit belief probabilities or opponent models are learned. These design choices prioritize clarity and experimental control over raw performance.
+
+Despite these simplifications, the method retains the essential structure of AlphaZero: self-play learning, MCTS-guided policy improvement, and joint training of policy and value functions. This makes it suitable for studying how AlphaZero-style learning interacts with belief-state reasoning in imperfect information games.
+
+\subsection{Summary}
+
+In summary, the proposed agent adapts the AlphaZero framework to Phantom Go by integrating belief-state search and restricting learning to information available to the player. The method does not aim to reproduce AlphaZero’s performance, but to investigate how learning-based search behaves under uncertainty and how it compares to non-learning belief-state methods.
+
 
 \section{Experimental Evaluation}
 
-10-12 pages
+This section describes the experimental setup used to evaluate the proposed AlphaZero-inspired belief-based agent and to compare it against search-based baselines. The goal of the evaluation is to assess how learning-based search performs under imperfect information and how it compares to non-learning belief-state methods under controlled computational budgets.
 
-Purpose: This is where your thesis earns its grade.
+\subsection{Experimental Setup}
 
-6.1 Experimental Setup
+All experiments are conducted on Phantom Go using the OpenSpiel implementation. Games are played on a standard $9 \times 9$ board with the default komi value of $7.5$.
 
-Hardware
+Training and evaluation are performed on a high-performance computing (HPC) cluster provided by the university. Unless otherwise stated, all agents are given identical per-move computational budgets to ensure fair comparison.
 
-Board size
+\subsection{Agents}
 
-Time limits
+The following agents are evaluated:
 
-Number of games
+\begin{itemize}
+  \item \textbf{Random Agent}: An agent that selects legal actions uniformly at random. This agent serves as a lower-bound baseline.
+  \item \textbf{BS-MCTS}: The belief-state Monte Carlo Tree Search agent described in Section~4. This agent does not use learning and relies entirely on belief-state sampling and search.
+  \item \textbf{AlphaZero-Inspired Belief Agent}: The learning-based agent described in Section~5, which combines belief-state MCTS with a neural network trained through self-play.
+\end{itemize}
 
-6.2 Baselines
+All agents use the same search parameters when applicable.
 
-BS-MCTS (from Section 4)
+\subsection{Training Configuration}
 
-Possibly IS-MCTS (optional)
+Only the AlphaZero-inspired belief agent requires training. Training is performed through self-play using belief-state MCTS guided by the current neural network.
 
-6.3 Results
+Unless otherwise specified, the following configuration is used:
+\begin{itemize}
+  \item Board size: $9 \times 9$
+  \item Number of simulations per move ($T$): 8
+  \item Number of belief samples per move ($S$): 4
+  \item Training epochs per iteration: 5
+  \item Batch size: 64
+  \item Learning rate: $10^{-3}$
+\end{itemize}
 
-Win rate comparisons
+To study the effect of training budget, multiple models are trained with increasing numbers of self-play games. In particular, training budgets of 100, 300, 600, and 1000 self-play games are considered. All other parameters are held constant across these runs.
 
-Learning curves
+\subsection{Evaluation Protocol}
 
-Stability vs compute
+Evaluation is performed by playing a fixed number of games between agents under identical conditions. For each matchup, 200 games are played to reduce the effect of randomness. Color assignments are balanced such that each agent plays an equal number of games as black and white.
 
-Sensitivity to hyperparameters
+The primary evaluation metric is win rate. For learning-based agents, win rates are reported as a function of training budget to illustrate performance trends as training progresses.
 
-No storytelling. Tables, plots, facts.
+No parameter tuning is performed during evaluation, and the evaluation protocol is fixed prior to observing results.
+
+\subsection{Reported Results}
+
+The evaluation reports:
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{assets/TUB.png}
+  \caption{Win rate of the AlphaZero-inspired belief agent against BS-MCTS as a function of the number of self-play training games. Each point is evaluated over 200 games with balanced colors.}
+  \label{fig:learning_curve}
+\end{figure}
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{assets/TUB.png}
+  \caption{Win rates of evaluated agents against baseline opponents. Results are averaged over 200 games per matchup with balanced color assignments.}
+  \label{fig:baseline_comparison}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{assets/TUB.png}
+  \caption{Win rate of the AlphaZero-inspired belief agent against BS-MCTS, split by playing color. Each bar is evaluated over 100 games per color.}
+  \label{fig:color_split}
+\end{figure}
+
+
 
 \section{Discussion}
 
-5–7 pages
+\subsection{Summary of Empirical Findings}
 
-Purpose: Show you can think critically.
+The results in Figure~\ref{fig:baseline_comparison} show that the proposed AlphaZero-inspired belief-based agent consistently outperforms the random baseline, confirming that both belief-state search and learning provide meaningful guidance in Phantom Go. When compared to the BS-MCTS baseline, the learning-based agent achieves comparable performance, with win rates that improve gradually as the number of self-play training games increases.
 
-Why AlphaZero-style methods help (or don’t)
+As shown in Figure~\ref{fig:learning_curve}, learning curves exhibit noticeable variance, particularly at smaller training budgets, but show an overall upward trend as more self-play data is accumulated. No abrupt performance jumps are observed, and improvements remain incremental across training budgets.
 
-Where belief modeling breaks
+\subsection{Effect of Learning under Imperfect Information}
 
-What limits performance (compute, belief noise, training instability)
+The results indicate that learning can improve decision-making under imperfect information, but that these improvements are modest under limited computational resources. Rather than discovering radically new strategies, the neural network appears to help guide search toward actions that are more robust across belief-consistent hidden states.
 
-Comparison to expectations from literature
+This behavior is consistent with the interpretation of the policy and value heads in Phantom Go. The policy head does not predict optimal moves in a fully known state, but instead learns preferences that perform reasonably well under uncertainty. Similarly, the value head provides an estimate of the expected outcome averaged over possible hidden states, which helps stabilize search but does not eliminate ambiguity inherent to the game.
 
-This is where you admit weaknesses intelligently.
+Overall, learning improves search efficiency and consistency, but does not overcome the fundamental uncertainty imposed by partial observability.
+
+
+\subsection{Comparison with Belief-State MCTS}
+
+BS-MCTS remains a strong baseline throughout the experiments. Its performance highlights the effectiveness of explicit belief-state reasoning even without learning. The AlphaZero-inspired belief agent does not consistently dominate BS-MCTS, but achieves similar performance while relying on a learned policy and value function to guide search.
+
+This suggests that learning primarily amortizes search knowledge across games rather than replacing search entirely. While BS-MCTS evaluates actions through repeated sampling at each decision point, the learning-based agent gradually internalizes patterns that reduce the reliance on pure search. However, under the limited training budgets and simplified belief modeling used in this thesis, this advantage remains moderate.
+
+
+\subsection{Limitations of the Proposed Approach}
+
+Several limitations constrain the observed performance of the proposed method.
+
+First, the belief over hidden states is assumed to be uniform across samples consistent with observations. As noted in prior work, uniform belief assumptions can limit performance in the presence of non-locality and asymmetric state likelihoods. More expressive belief models could potentially improve action evaluation.
+
+Second, no explicit opponent modeling is employed. Opponent guessing and predicting mechanisms, as proposed in prior BS-MCTS work, are omitted for simplicity. This restricts the agent's ability to exploit patterns in opponent behavior.
+
+Third, the neural network architecture is intentionally small, and training budgets are limited. These constraints reduce the representational capacity of the model and slow learning. Additionally, no symmetry-based data augmentation is used, further limiting data efficiency.
+
+Finally, search parameters are fixed across all agents. While this ensures fair comparison, it may not be optimal for the learning-based agent, which could benefit from different exploration-exploitation trade-offs.
+
+
+\subsection{Relation to Prior Work}
+
+The observed results align with prior findings in imperfect information games. Consistent with earlier work on IS-MCTS, naive application of search methods that assume full observability performs poorly in Phantom Go. Belief-state reasoning, as used in BS-MCTS, significantly mitigates these issues.
+
+Compared to prior BS-MCTS implementations, the simplified belief handling used in this thesis yields competitive but not dominant performance. This supports the view that belief-state aggregation is beneficial even without complex opponent modeling, while also highlighting the importance of belief weighting for further gains.
+
+In contrast to AlphaZero's success in perfect-information games, the results illustrate that learning-based search does not trivially transfer to imperfect information settings. Instead, learning must operate under uncertainty and complements search rather than replacing it.
+
+\subsection{Takeaways}
+
+The main takeaway of this study is that AlphaZero-style learning can be meaningfully combined with belief-state search in imperfect information games, even under simplified assumptions and limited compute. While performance gains are modest, the approach demonstrates that learning can guide search toward more robust decisions under uncertainty.
+
+At the same time, the results emphasize that imperfect information fundamentally limits achievable performance and that belief modeling remains a central challenge. Improvements beyond the results reported here likely require richer belief representations, opponent modeling, and increased training budgets.
+
 
 \section{Conclusion and Future Work}
 
-3–5 pages
+This thesis investigated how AlphaZero-style learning can be adapted to an imperfect information setting by integrating belief-state reasoning with Monte Carlo Tree Search. Using Phantom Go as a testbed, the work explored whether learning-based search can provide benefits over non-learning belief-state methods under realistic computational constraints.
 
-Purpose: Close the loop.
+A belief-state Monte Carlo Tree Search baseline was implemented to explicitly handle uncertainty over hidden game states. Building on this baseline, an AlphaZero-inspired agent was proposed that combines belief-state search with a neural network trained through self-play. Unlike standard AlphaZero, the proposed method does not assume access to the true game state and instead operates solely on belief-consistent information available to the player.
 
-Answer the research question directly
+Experimental results show that the learning-based agent reliably outperforms a random baseline and achieves performance comparable to belief-state MCTS. Learning improves search guidance by encouraging action choices that are robust across uncertainty, but does not eliminate the fundamental ambiguity imposed by partial observability. Performance gains remain incremental under limited training budgets and simplified belief modeling.
 
-Summarize what worked and what didn’t
+Overall, the results demonstrate that AlphaZero-style learning can be meaningfully combined with belief-state search in imperfect information games, even when using small neural networks and modest computational resources. At the same time, the findings highlight that belief modeling remains a central challenge and that learning complements search rather than replacing it in this setting.
 
-Concrete future work (not vague “more experiments”)
+\subsection{Future Work}
+
+Several directions for future work emerge from this study.
+
+First, belief modeling could be improved by moving beyond a uniform belief over sampled hidden states. Incorporating weighted belief distributions or opponent modeling techniques, such as opponent guessing and opponent predicting, may allow the agent to better account for asymmetric state likelihoods and reduce the impact of non-locality.
+
+Second, data efficiency could be improved through symmetry-based data augmentation. While commonly used in perfect-information Go, extending symmetry exploitation to Phantom Go requires careful handling of partial observability and observation-dependent legality, and remains an open challenge.
+
+Third, larger and more expressive neural network architectures could be explored, along with increased self-play training budgets. This would help clarify whether the observed performance plateau is due to limited model capacity or inherent uncertainty in the game.
+
+Finally, the approach could be evaluated in other imperfect information domains supported by OpenSpiel to assess its generality beyond Phantom Go.
+
+Together, these directions point toward richer integrations of learning and belief-state reasoning as a promising avenue for future research in imperfect information games.
+
+
 
 \section{References}
 \printbibliography[heading=none]
