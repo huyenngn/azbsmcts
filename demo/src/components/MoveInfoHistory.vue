@@ -8,18 +8,15 @@ const props = defineProps<{
 </script>
 
 <template>
-  <ScrollArea class="h-65 w-50 rounded-md border">
-    <div class="p-4">
-      <h6 class="mb-2">Previous Moves</h6>
-      <TransitionGroup name="move-info" tag="div" class="flex flex-col-reverse">
-        <div v-for="(info, index) in props.previousMoveInfos" :key="`${index}`" class="move-item">
-          <Separator />
-          <div class="py-2">
-            {{ info }}
-          </div>
+  <ScrollArea class="rounded-md border grow max-h-[40dvh] sm:max-h-67 px-4 py-2">
+    <TransitionGroup name="move-info" tag="div" class="flex flex-col-reverse">
+      <div v-for="(info, index) in props.previousMoveInfos" :key="`${index}`" class="move-item">
+        <div class="py-2">
+          {{ info }}
         </div>
-      </TransitionGroup>
-    </div>
+        <Separator v-if="index !== 0" />
+      </div>
+    </TransitionGroup>
   </ScrollArea>
 </template>
 

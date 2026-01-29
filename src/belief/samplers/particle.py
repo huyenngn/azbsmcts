@@ -2,24 +2,27 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import List, Optional
 
 import pyspiel
+
+from utils import utils
 
 
 @dataclass
 class _StepRecord:
+    """Record of a single game step for belief reconstruction."""
+
     actor_is_ai: bool
-    ai_action: Optional[int]
+    ai_action: int | None
     ai_obs_after: str
 
 
 class ParticleBeliefSampler:
     """
-    Non-cheating belief sampler for Phantom Go.
+    Non-cheating belief sampler using particle filtering.
 
-    Maintains K particles (fully-determined states) consistent with the AI player's
-    observation history, but NEVER conditions on hidden opponent actions.
+    Maintains particles (fully-determined states) consistent with
+    the AI player's observation history without using hidden information.
     """
 
     def __init__(
@@ -38,20 +41,27 @@ class ParticleBeliefSampler:
         self.rebuild_max_tries = rebuild_max_tries
         self.rng = random.Random(seed)
 
-        self._history: List[_StepRecord] = []
-        self._particles: List[pyspiel.State] = []
+        self._history: list[_StepRecord] = []
+        self._particles: list[pyspiel.State] = []
 
     def _ai_obs(self, state: pyspiel.State) -> str:
         return state.observation_string(self.ai_id)
 
-    def reset(self):
+    def reset(self) -> None:
+        """Clear history and particles for a new game."""
         self._history.clear()
         self._particles.clear()
 
-    def step(self, actor: int, action: int, real_state_after: pyspiel.State):
+    def step(
+        self, actor: int, action: int, real_state_after: pyspiel.State
+    ) -> None:
         """
-        Call this after EVERY real ply (human or AI) was applied to the real state.
-        If actor != ai_id, the action is hidden and will NOT be used (non-cheating).
+        Update belief after a move.
+
+        Args:
+            actor: Player who made the move.
+            action: Action taken (ignored if actor is opponent).
+            real_state_after: State after action for observation extraction.
         """
         rec = _StepRecord(
             actor_is_ai=(actor == self.ai_id),
@@ -64,9 +74,9 @@ class ParticleBeliefSampler:
             self._rebuild_particles()
             return
 
-        updated: List[pyspiel.State] = []
+        updated: list[pyspiel.State] = []
         for p in self._particles:
-            p2 = p.clone()
+            p2 = utils.clone_state(p)
 
             if rec.actor_is_ai:
                 if rec.ai_action not in p2.legal_actions():
@@ -79,7 +89,7 @@ class ParticleBeliefSampler:
             # Opponent action hidden: sample until observation matches
             ok = False
             for _ in range(self.opp_tries_per_particle):
-                p3 = p2.clone()
+                p3 = utils.clone_state(p2)
                 la = p3.legal_actions()
                 if not la:
                     break
@@ -96,22 +106,15 @@ class ParticleBeliefSampler:
         if not self._particles:
             self._rebuild_particles()
 
-    def sample(self) -> Optional[pyspiel.State]:
-        """
-        Returns a sampled determinization gamma as a clone of a particle.
-        Returns None if no particles exist (caller must handle).
-        """
+    def sample(self) -> pyspiel.State | None:
+        """Sample a particle consistent with observation history."""
         if not self._particles:
             return None
-        return self.rng.choice(self._particles).clone()
 
-    def _rebuild_particles(self):
-        """
-        Rejection sampling from initial state using *only* AI info:
-        - AI actions (known)
-        - AI observation after each ply (known)
-        - opponent actions sampled (hidden)
-        """
+        return utils.clone_state(self.rng.choice(self._particles))
+
+    def _rebuild_particles(self) -> None:
+        """Rejection sampling from initial state consistent with observation history."""
         self._particles = []
         tries = 0
 
@@ -135,7 +138,7 @@ class ParticleBeliefSampler:
                 else:
                     matched = False
                     for _ in range(self.opp_tries_per_particle):
-                        s2 = s.clone()
+                        s2 = utils.clone_state(s)
                         la = s2.legal_actions()
                         if not la:
                             break
@@ -155,8 +158,9 @@ class ParticleBeliefSampler:
 
 class ParticleDeterminizationSampler:
     """
-    Adapter: conform ParticleBeliefSampler to DeterminizationSampler interface.
-    Degrades gracefully to cloning if particles are empty (still non-cheating).
+    Adapter conforming ParticleBeliefSampler to DeterminizationSampler.
+
+    Falls back to cloning current state if no particles available.
     """
 
     def __init__(self, particle_sampler: ParticleBeliefSampler):
@@ -165,5 +169,6 @@ class ParticleDeterminizationSampler:
     def sample(
         self, state: pyspiel.State, rng: random.Random
     ) -> pyspiel.State:
+        """Sample a determinized state from particles or clone."""
         p = self.particle_sampler.sample()
-        return p if p is not None else state.clone()
+        return p if p is not None else utils.clone_state(state)

@@ -21,18 +21,14 @@ from utils import utils
 
 @dataclass
 class Result:
+    """Aggregated match results."""
+
     games: int = 0
     p0_wins: int = 0
     p1_wins: int = 0
     draws: int = 0
     p0_return_sum: float = 0.0
     p1_return_sum: float = 0.0
-
-
-def _obs_size_for_player(game: pyspiel.Game, player_id: int) -> int:
-    s = game.new_initial_state()
-    # Strict: always specify player id
-    return len(s.observation_tensor(player_id))
 
 
 def make_agent(
@@ -44,6 +40,7 @@ def make_agent(
     seed: int,
     device: str,
 ):
+    """Create an agent of the specified type."""
     num_actions = game.num_distinct_actions()
 
     if kind == "random":
@@ -73,12 +70,11 @@ def make_agent(
         )
 
     if kind == "azbsmcts":
-        obs_size = _obs_size_for_player(game, player_id=player_id)
         return (
             AZBSMCTSAgent(
                 player_id=player_id,
                 num_actions=num_actions,
-                obs_size=obs_size,
+                obs_size=game.observation_tensor_size(),
                 sampler=sampler,
                 T=T,
                 S=S,
@@ -95,6 +91,7 @@ def make_agent(
 def select_action(
     kind: str, agent, state: pyspiel.State, rng: random.Random
 ) -> int:
+    """Select action using agent or random fallback."""
     if kind == "random" or agent is None:
         return rng.choice(state.legal_actions())
     return agent.select_action(state)
@@ -108,7 +105,8 @@ def play_game(
     S: int,
     seed: int,
     device: str,
-) -> t.Tuple[float, float]:
+) -> tuple[float, float]:
+    """Play a single game and return (p0_return, p1_return)."""
     rng = random.Random(seed)
     state = game.new_initial_state()
 
@@ -135,6 +133,7 @@ def play_game(
 
 
 def update_result(res: Result, r0: float, r1: float):
+    """Update result aggregator with game outcome."""
     res.games += 1
     res.p0_return_sum += r0
     res.p1_return_sum += r1
@@ -147,6 +146,7 @@ def update_result(res: Result, r0: float, r1: float):
 
 
 def summarize(label: str, res: Result):
+    """Print a summary of the match results."""
     p0_wr = res.p0_wins / max(1, res.games)
     p1_wr = res.p1_wins / max(1, res.games)
     dr = res.draws / max(1, res.games)
@@ -169,8 +169,9 @@ def run_match(
     S: int,
     seed: int,
     device: str,
-) -> t.Dict[str, Result]:
-    out: t.Dict[str, Result] = {}
+) -> dict[str, Result]:
+    """Run n games with both color assignments."""
+    out: dict[str, Result] = {}
 
     res_ab = Result()
     for i in range(n):
@@ -188,13 +189,11 @@ def run_match(
 
 
 def _az_winrate_from_run_match(
-    res: t.Dict[str, Result], az_label: str = "azbsmcts"
+    res: dict[str, Result], az_label: str = "azbsmcts"
 ) -> float:
     items = list(res.items())
     r1 = items[0][1]
     r2 = items[1][1]
-    # r1 label is like "azbsmcts(p0) vs bsmcts(p1)"
-    # r2 label is like "bsmcts(p0) vs azbsmcts(p1)"
     az_wins = (
         r1.p0_wins + r2.p1_wins
         if az_label in items[0][0]
@@ -204,19 +203,19 @@ def _az_winrate_from_run_match(
     return az_wins / max(1, total)
 
 
-def _find_run_dirs(runs_root: pathlib.Path) -> t.List[pathlib.Path]:
+def _find_run_dirs(runs_root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(
         [p for p in runs_root.glob("*") if (p / "model.pt").exists()]
     )
 
 
-def _load_config(run_dir: pathlib.Path) -> t.Dict[str, t.Any]:
+def _load_config(run_dir: pathlib.Path) -> dict[str, t.Any]:
     cfg = run_dir / "config.json"
     return json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}
 
 
 def _extract_x(
-    run_dir: pathlib.Path, cfg: t.Dict[str, t.Any], x_axis: str
+    run_dir: pathlib.Path, cfg: dict[str, t.Any], x_axis: str
 ) -> float:
     if x_axis == "games":
         if "games" in cfg:

@@ -38,15 +38,13 @@ def main():
     train.set_global_seeds(args.seed, deterministic_torch=False)
 
     game = pyspiel.load_game("phantom_go", {"board_size": args.board})
-    tmp = game.new_initial_state()
-    obs_size = len(tmp.observation_tensor())
     num_actions = game.num_distinct_actions()
 
     # FIXED ARCHITECTURE (keep tuning simple and checkpoints compatible)
     FIXED_HIDDEN = 256
 
     def objective(trial: optuna.Trial) -> float:
-        # Search hyperparameters (keep small + stable)
+        """Single trial: train briefly and evaluate against BS-MCTS."""
         T = trial.suggest_int("T", 2, 16, log=True)
         S = trial.suggest_int("S", 2, 8)
         lr = trial.suggest_float("lr", 1e-4, 3e-3, log=True)
@@ -75,7 +73,7 @@ def main():
             json.dump(cfg, f, indent=2)
 
         net = TinyPolicyValueNet(
-            obs_size=obs_size,
+            obs_size=game.observation_tensor_size(),
             num_actions=num_actions,
             hidden=FIXED_HIDDEN,
         ).to(args.device)

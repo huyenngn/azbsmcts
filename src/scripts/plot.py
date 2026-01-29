@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 from utils import utils
 
 
-def read_jsonl(path: pathlib.Path) -> t.List[t.Dict[str, t.Any]]:
+def read_jsonl(path: pathlib.Path) -> list[dict[str, t.Any]]:
+    """Read a JSONL file and return list of rows."""
     rows = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -19,7 +20,10 @@ def read_jsonl(path: pathlib.Path) -> t.List[t.Dict[str, t.Any]]:
     return rows
 
 
-def plot_run(metrics_path: pathlib.Path, out_dir: pathlib.Path):
+def plot_run(
+    metrics_path: pathlib.Path, out_dir: pathlib.Path
+) -> pathlib.Path | None:
+    """Generate loss plot for a single training run."""
     rows = read_jsonl(metrics_path)
     if not rows:
         return

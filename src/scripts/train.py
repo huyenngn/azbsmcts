@@ -2,7 +2,6 @@ import argparse
 import json
 import pathlib
 import random
-import typing as t
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -22,12 +21,15 @@ from utils import utils
 
 @dataclass
 class Example:
-    obs: np.ndarray  # [obs_size]  (SIDE-TO-MOVE perspective)
-    pi: np.ndarray  # [num_actions]
-    z: float  # scalar target value from SIDE-TO-MOVE perspective
+    """Training example from self-play."""
+
+    obs: np.ndarray  # Observation from side-to-move perspective
+    pi: np.ndarray  # Policy target from MCTS visit counts
+    z: float  # Value target from game outcome
 
 
 def set_global_seeds(seed: int, deterministic_torch: bool = False):
+    """Set random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
 
@@ -45,6 +47,7 @@ def set_global_seeds(seed: int, deterministic_torch: bool = False):
 
 
 def make_run_dir(prefix: str, seed: int) -> pathlib.Path:
+    """Create timestamped run directory."""
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = pathlib.Path("runs") / f"{ts}_{prefix}_seed{seed}"
     utils.ensure_dir(run_dir)
@@ -52,12 +55,10 @@ def make_run_dir(prefix: str, seed: int) -> pathlib.Path:
 
 
 def obs_tensor_side_to_move(state: pyspiel.State) -> np.ndarray:
-    side = state.current_player()
-    try:
-        obs = state.observation_tensor(side)  # if supported
-    except TypeError:
-        obs = state.observation_tensor()
-    return np.asarray(obs, dtype=np.float32).reshape(-1)
+    """Get observation tensor for the current player."""
+    return np.asarray(
+        state.observation_tensor(state.current_player()), dtype=np.float32
+    )
 
 
 def self_play(
@@ -69,12 +70,18 @@ def self_play(
     seed: int,
     temperature: float,
     device: str,
-) -> t.Tuple[t.List[Example], t.List[float]]:
+) -> tuple[list[Example], list[float]]:
+    """
+    Generate training examples via self-play.
+
+    Returns:
+        Tuple of (examples, player_0_returns).
+    """
     rng = random.Random(seed)
 
     num_actions = game.num_distinct_actions()
-    examples: t.List[Example] = []
-    p0_returns: t.List[float] = []
+    examples: list[Example] = []
+    p0_returns: list[float] = []
 
     for _ in range(num_games):
         state = game.new_initial_state()
@@ -87,10 +94,11 @@ def self_play(
             game=game, ai_id=1, seed=rng.randint(0, 10**9)
         )
 
+        obs_size = game.observation_tensor_size()
         a0 = AZBSMCTSAgent(
             player_id=0,
             num_actions=num_actions,
-            obs_size=len(obs_tensor_side_to_move(state)),
+            obs_size=obs_size,
             sampler=ParticleDeterminizationSampler(p0),
             T=T,
             S=S,
@@ -101,7 +109,7 @@ def self_play(
         a1 = AZBSMCTSAgent(
             player_id=1,
             num_actions=num_actions,
-            obs_size=len(obs_tensor_side_to_move(state)),
+            obs_size=obs_size,
             sampler=ParticleDeterminizationSampler(p1),
             T=T,
             S=S,
@@ -110,7 +118,7 @@ def self_play(
             device=device,
         )
 
-        traj: t.List[t.Tuple[np.ndarray, np.ndarray, int]] = []
+        traj: list[tuple[np.ndarray, np.ndarray, int]] = []
 
         while not state.is_terminal():
             p = state.current_player()
@@ -137,7 +145,6 @@ def self_play(
         rets = state.returns()
         p0_returns.append(float(rets[0]))
 
-        # SIDE-TO-MOVE value targets: z = return for the player who acted at that state
         for obs, pi, p in traj:
             z = float(rets[p])
             examples.append(Example(obs=obs, pi=pi, z=z))
@@ -147,7 +154,7 @@ def self_play(
 
 def train_net(
     net: TinyPolicyValueNet,
-    examples: t.List[Example],
+    examples: list[Example],
     epochs: int,
     batch_size: int,
     lr: float,
@@ -155,6 +162,7 @@ def train_net(
     seed: int,
     metrics_path=None,
 ):
+    """Train network on collected examples."""
     rng = np.random.default_rng(seed)
     opt = torch.optim.Adam(net.parameters(), lr=lr)
     net.train()
@@ -249,13 +257,11 @@ def main():
     metrics_path = run_dir / "train_metrics.jsonl"
 
     game = pyspiel.load_game("phantom_go", {"board_size": 9})
-    tmp = game.new_initial_state()
-    obs_size = len(obs_tensor_side_to_move(tmp))
     num_actions = game.num_distinct_actions()
 
-    net = TinyPolicyValueNet(obs_size=obs_size, num_actions=num_actions).to(
-        args.device
-    )
+    net = TinyPolicyValueNet(
+        obs_size=game.observation_tensor_size(), num_actions=num_actions
+    ).to(args.device)
 
     print("self-play...")
     examples, p0rets = self_play(

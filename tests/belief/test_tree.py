@@ -103,7 +103,7 @@ class TestBeliefTree:
     def test_initialization(self):
         """Test belief tree initialization."""
         tree = BeliefTree()
-        assert len(tree.nodes) == 0
+        assert len(tree._nodes) == 0
 
     def test_get_or_create_new_node(self):
         """Test creating a new node."""
@@ -112,8 +112,8 @@ class TestBeliefTree:
 
         assert node.obs_key == "obs1"
         assert node.player_to_act == 0
-        assert len(tree.nodes) == 1
-        assert "obs1" in tree.nodes
+        assert len(tree._nodes) == 1
+        assert "obs1" in tree._nodes
 
     def test_get_or_create_existing_node(self):
         """Test retrieving an existing node."""
@@ -126,7 +126,7 @@ class TestBeliefTree:
         # Should return the same node
         assert node2 is node1
         assert node2.n == 5
-        assert len(tree.nodes) == 1
+        assert len(tree._nodes) == 1
 
     def test_multiple_nodes(self):
         """Test creating multiple nodes."""
@@ -134,7 +134,7 @@ class TestBeliefTree:
         node1 = tree.get_or_create("obs1", player_to_act=0)
         node2 = tree.get_or_create("obs2", player_to_act=1)
 
-        assert len(tree.nodes) == 2
+        assert len(tree._nodes) == 2
         assert node1 is not node2
-        assert tree.nodes["obs1"] is node1
-        assert tree.nodes["obs2"] is node2
+        assert tree._nodes["obs1"] is node1
+        assert tree._nodes["obs2"] is node2

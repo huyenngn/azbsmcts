@@ -7,13 +7,15 @@ import pyspiel
 from agents.base import BaseAgent
 from belief.samplers.base import DeterminizationSampler
 from belief.tree import BeliefTree, EdgeStats, Node
+from utils import utils
 
 
 class BSMCTSAgent(BaseAgent):
     """
-    Baseline: dumb BS-MCTS-ish agent.
-    IMPORTANT:
-    - Requires an explicit DeterminizationSampler (no cloning real state).
+    Belief-State Monte Carlo Tree Search agent.
+
+    Uses determinization sampling to handle imperfect information.
+    Does not use learned priors; relies on UCT for exploration.
     """
 
     def __init__(
@@ -38,6 +40,7 @@ class BSMCTSAgent(BaseAgent):
         self.rollout_limit = int(rollout_limit)
 
     def select_action(self, state: pyspiel.State) -> int:
+        """Select the best action via MCTS over sampled determinizations."""
         root = self.tree.get_or_create(
             self.obs_key(state, self.player_id), state.current_player()
         )
@@ -48,11 +51,12 @@ class BSMCTSAgent(BaseAgent):
         for _ in range(self.T):
             gamma = self.sampler.sample(state, self.rng)
             for _ in range(self.S):
-                self._search(gamma.clone())
+                self._search(utils.clone_state(gamma))
 
         return root.get_most_visited_action()
 
     def _expand(self, node: Node, state: pyspiel.State):
+        """Initialize node edges for all legal actions."""
         node.is_expanded = True
         node.legal_actions = list(state.legal_actions())
         for a in node.legal_actions:
@@ -64,6 +68,7 @@ class BSMCTSAgent(BaseAgent):
         return q + u
 
     def _rollout(self, state: pyspiel.State) -> float:
+        """Random playout to terminal or depth limit."""
         steps = 0
         while (not state.is_terminal()) and steps < self.rollout_limit:
             la = state.legal_actions()
@@ -77,6 +82,7 @@ class BSMCTSAgent(BaseAgent):
         return 0.0
 
     def _search(self, state: pyspiel.State) -> float:
+        """Recursive MCTS search with UCT selection."""
         if state.is_terminal():
             return float(state.returns()[self.player_id])
 
@@ -87,7 +93,7 @@ class BSMCTSAgent(BaseAgent):
 
         if not node.is_expanded:
             self._expand(node, state)
-            return self._rollout(state.clone())
+            return self._rollout(utils.clone_state(state))
 
         legal_now = set(state.legal_actions())
         best_a = None
@@ -101,7 +107,7 @@ class BSMCTSAgent(BaseAgent):
                 best_a = a
 
         if best_a is None:
-            return self._rollout(state.clone())
+            return self._rollout(utils.clone_state(state))
 
         state.apply_action(best_a)
         v = self._search(state)

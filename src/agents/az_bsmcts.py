@@ -11,19 +11,16 @@ from agents.base import BaseAgent, PolicyTargetMixin
 from belief.samplers.base import DeterminizationSampler
 from belief.tree import BeliefTree, EdgeStats, Node
 from nets.tiny_policy_value import TinyPolicyValueNet, get_shared_az_model
+from utils import utils
 from utils.softmax import softmax_np
 
 
 class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
     """
-    AZ-guided BS-MCTS.
+    AlphaZero-guided Belief-State MCTS agent.
 
-    Strict rules enforced:
-    - No default clone determinization (must pass a belief-based sampler).
-    - No observation_tensor()/observation_string() without player id.
-    - NN input is from SIDE-TO-MOVE perspective: observation_tensor(state.current_player()).
-    - NN value is assumed to be SIDE-TO-MOVE perspective.
-      We convert to ROOT-player perspective for backup.
+    Uses neural network priors and values with PUCT selection.
+    All observations use explicit player IDs to prevent information leakage.
     """
 
     def __init__(
@@ -64,9 +61,8 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         self._obs_size = int(obs_size)
 
     def _state_tensor_side_to_move(self, state: pyspiel.State) -> torch.Tensor:
+        """Get observation tensor from current player's perspective."""
         side = state.current_player()
-
-        # Strict: always use explicit player id
         obs = self.obs_tensor(state, side)
         if obs.size != self._obs_size:
             raise ValueError(
@@ -75,6 +71,7 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         return torch.from_numpy(obs).to(self.device)
 
     def _expand(self, node: Node, state: pyspiel.State):
+        """Expand node and initialize edges with network priors."""
         node.is_expanded = True
         node.legal_actions = list(state.legal_actions())
         for a in node.legal_actions:
@@ -94,12 +91,11 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
             node.edges[a].p = float(priors[a])
 
     def _leaf_value_root_perspective(self, state: pyspiel.State) -> float:
+        """Get network value and convert to root player's perspective."""
         with torch.no_grad():
             x = self._state_tensor_side_to_move(state).unsqueeze(0)
-            _logits, v = self.net(x)
+            _, v = self.net(x)
             v_cur = float(v.item())
-
-        # Convert side-to-move -> root perspective
         return v_cur if state.current_player() == self.player_id else -v_cur
 
     def _puct(self, parent: Node, edge: EdgeStats) -> float:
@@ -108,6 +104,7 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         return q + u
 
     def _search(self, state: pyspiel.State) -> float:
+        """Recursive MCTS search with PUCT selection and NN evaluation."""
         if state.is_terminal():
             return float(state.returns()[self.player_id])
 
@@ -161,12 +158,14 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         return pi
 
     def select_action(self, state: pyspiel.State) -> int:
-        a, _pi = self.select_action_with_pi(state, temperature=1e-8)
+        """Select best action (greedy, temperature=0)."""
+        a, _ = self.select_action_with_pi(state, temperature=1e-8)
         return a
 
     def select_action_with_pi(
         self, state: pyspiel.State, temperature: float = 1.0
     ) -> Tuple[int, np.ndarray]:
+        """Select action with policy vector for training."""
         root = self.tree.get_or_create(
             self.obs_key(state, self.player_id), state.current_player()
         )
@@ -176,7 +175,7 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         for _ in range(self.T):
             gamma = self.sampler.sample(state, self.rng)
             for _ in range(self.S):
-                self._search(gamma.clone())
+                self._search(utils.clone_state(gamma))
 
         pi = self._root_visit_policy(root, temperature=float(temperature))
 

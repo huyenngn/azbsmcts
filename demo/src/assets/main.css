@@ -10,6 +10,7 @@
   align-items: stretch;
   margin: 0 auto;
   padding: 2rem;
+  max-height: 100dvh;
 }
 
 @theme inline {

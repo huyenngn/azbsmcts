@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TypedDict
 
 import torch
 import torch.nn as nn
@@ -10,13 +10,10 @@ import torch.nn.functional as F
 
 
 class TinyPolicyValueNet(nn.Module):
-    """
-    Minimal policy/value network.
-    Input: flattened observation tensor
-    Output: policy logits over action space, and scalar value in [-1,1]
-    """
+    """Minimal policy/value network."""
 
     def __init__(self, obs_size: int, num_actions: int, hidden: int = 256):
+        """Initialize network layers."""
         super().__init__()
         self.obs_size = obs_size
         self.num_actions = num_actions
@@ -27,6 +24,7 @@ class TinyPolicyValueNet(nn.Module):
         self.value = nn.Linear(hidden, 1)
 
     def forward(self, x):
+        """Forward pass returning (policy_logits, value)."""
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         logits = self.policy(x)
@@ -34,45 +32,44 @@ class TinyPolicyValueNet(nn.Module):
         return logits, v
 
 
-class _AZShared(TypedDict):
-    net: Optional[TinyPolicyValueNet]
-    device: Optional[str]
-    path: Optional[str]
-    obs_size: Optional[int]
-    num_actions: Optional[int]
+@dataclass
+class _AZShared:
+    net: TinyPolicyValueNet | None = None
+    device: str | None = None
+    path: str | None = None
+    obs_size: int | None = None
+    num_actions: int | None = None
 
 
-_AZ_SHARED: _AZShared = {
-    "net": None,
-    "device": None,
-    "path": None,
-    "obs_size": None,
-    "num_actions": None,
-}
+_AZ_SHARED: _AZShared = _AZShared(
+    net=None,
+    device=None,
+    path=None,
+    obs_size=None,
+    num_actions=None,
+)
 
 
 def get_shared_az_model(
     obs_size: int,
     num_actions: int,
-    model_path: Optional[str] = None,
-    device: Optional[str] = None,
+    model_path: str | None = None,
+    device: str | None = None,
 ) -> TinyPolicyValueNet:
-    """
-    Singleton net cache: keeps eval model around for agents/eval/training loops.
-    """
+    """Load or create a shared model instance."""
     if device is None:
         device = os.environ.get("AZ_DEVICE", "cpu")
     if model_path is None:
         model_path = os.environ.get("AZ_MODEL_PATH", "models/model.pt")
 
     if (
-        _AZ_SHARED["net"] is not None
-        and _AZ_SHARED["device"] == device
-        and _AZ_SHARED["path"] == model_path
-        and _AZ_SHARED["obs_size"] == obs_size
-        and _AZ_SHARED["num_actions"] == num_actions
+        _AZ_SHARED.net is not None
+        and _AZ_SHARED.device == device
+        and _AZ_SHARED.path == model_path
+        and _AZ_SHARED.obs_size == obs_size
+        and _AZ_SHARED.num_actions == num_actions
     ):
-        return _AZ_SHARED["net"]  # type: ignore[return-value]
+        return _AZ_SHARED.net
 
     net = TinyPolicyValueNet(obs_size=obs_size, num_actions=num_actions).to(
         device
@@ -84,9 +81,9 @@ def get_shared_az_model(
         state_dict = torch.load(str(p), map_location=device)
         net.load_state_dict(state_dict)
 
-    _AZ_SHARED["net"] = net
-    _AZ_SHARED["device"] = device
-    _AZ_SHARED["path"] = model_path
-    _AZ_SHARED["obs_size"] = obs_size
-    _AZ_SHARED["num_actions"] = num_actions
+    _AZ_SHARED.net = net
+    _AZ_SHARED.device = device
+    _AZ_SHARED.path = model_path
+    _AZ_SHARED.obs_size = obs_size
+    _AZ_SHARED.num_actions = num_actions
     return net

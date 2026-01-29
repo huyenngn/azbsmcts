@@ -14,7 +14,7 @@ const mode = useColorMode()
 </script>
 
 <template>
-  <header class="flex sticky z-40 justify-end">
+  <header class="flex sticky z-40 justify-end pb-8">
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
         <Button variant="outline">
@@ -36,5 +36,7 @@ const mode = useColorMode()
       </DropdownMenuContent>
     </DropdownMenu>
   </header>
-  <RouterView />
+  <main class="grow self-center flex w-full h-full md:w-150">
+    <RouterView />
+  </main>
 </template>

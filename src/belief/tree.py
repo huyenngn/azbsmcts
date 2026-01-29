@@ -1,46 +1,50 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 
 @dataclass
 class EdgeStats:
+    """Statistics for a tree edge (action)."""
+
     n: int = 0
-    w: float = 0.0  # total value (root-perspective for AZBSMCTS)
-    p: float = 0.0  # prior probability (for PUCT)
+    w: float = 0.0
+    p: float = 0.0
 
     @property
     def q(self) -> float:
+        """Mean action value."""
         return 0.0 if self.n == 0 else self.w / self.n
 
 
 @dataclass
 class Node:
+    """A node in the belief tree indexed by observation."""
+
     obs_key: str
     player_to_act: int
     is_expanded: bool = False
-    edges: Dict[int, EdgeStats] = field(default_factory=dict)
-    legal_actions: List[int] = field(default_factory=list)
-    n: int = 0  # node visit count
+    edges: dict[int, EdgeStats] = field(default_factory=dict)
+    legal_actions: list[int] = field(default_factory=list)
+    n: int = 0
 
     def get_most_visited_action(self, actions: list[int] | None = None) -> int:
+        """Return action with highest visit count."""
         if actions is None:
-            actions = [a for a in self.edges.keys()]
+            actions = list(self.edges.keys())
         return max(actions, key=lambda a: self.edges.get(a, EdgeStats()).n)
 
 
 class BeliefTree:
-    """
-    Belief tree keyed by the agent's observation string (player-relative, partial info).
-    """
+    """Tree structure mapping observations to nodes."""
 
     def __init__(self):
-        self.nodes: Dict[str, Node] = {}
+        self._nodes: dict[str, Node] = {}
 
     def get_or_create(self, obs_key: str, player_to_act: int) -> Node:
-        node = self.nodes.get(obs_key)
-        if node is None:
-            node = Node(obs_key=obs_key, player_to_act=player_to_act)
-            self.nodes[obs_key] = node
-        return node
+        """Get existing node or create new one for observation."""
+        if obs_key not in self._nodes:
+            self._nodes[obs_key] = Node(
+                obs_key=obs_key, player_to_act=player_to_act
+            )
+        return self._nodes[obs_key]
