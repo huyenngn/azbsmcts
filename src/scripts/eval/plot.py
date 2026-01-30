@@ -8,26 +8,31 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from scripts.common.io import read_jsonl
-from utils import utils
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--in", dest="inp", type=str, default="plots/eval/eval_sweep.jsonl"
+        "--run-dir",
+        type=str,
+        required=True,
+        help="Path to a single training run directory (e.g., runs/run_20260130_123456)",
     )
-    p.add_argument("--outdir", type=str, default="plots/eval")
     p.add_argument("--x", type=str, default="x_games")
     args = p.parse_args()
 
-    inp = pathlib.Path(args.inp)
+    run_dir = pathlib.Path(args.run_dir)
+    inp = run_dir / "eval_sweep.jsonl"
+
+    if not inp.exists():
+        print(f"No eval_sweep.jsonl found in {run_dir}")
+        print("Run 'eval-sweep --run-dir <run>' first.")
+        return
+
     rows = read_jsonl(inp)
     if not rows:
         print(f"No rows in {inp}")
         return
-
-    outdir = pathlib.Path(args.outdir)
-    utils.ensure_dir(outdir)
 
     xs = np.array([r.get(args.x, float("nan")) for r in rows], dtype=float)
     wr_b = np.array(
@@ -41,16 +46,17 @@ def main():
     xs, wr_b, wr_r = xs[order], wr_b[order], wr_r[order]
 
     plt.figure()
-    plt.plot(xs, wr_b, label="AZ vs BS-MCTS")
-    plt.plot(xs, wr_r, label="AZ vs Random")
-    plt.xlabel(args.x)
-    plt.ylabel("win rate")
+    plt.plot(xs, wr_b, marker="o", label="AZ vs BS-MCTS")
+    plt.plot(xs, wr_r, marker="s", label="AZ vs Random")
+    plt.xlabel("Training games")
+    plt.ylabel("Win rate")
     plt.ylim(0.0, 1.0)
-    plt.title("Evaluation win rate vs training budget")
+    plt.title(f"Evaluation: {run_dir.name}")
     plt.legend()
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    out_path = outdir / "eval_winrate_vs_training.png"
+    out_path = run_dir / "eval_winrate.png"
     plt.savefig(out_path)
     plt.close()
 

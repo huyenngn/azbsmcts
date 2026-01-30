@@ -36,6 +36,8 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         device: str = "cpu",
         net: Optional[TinyPolicyValueNet] = None,
         model_path: Optional[str] = None,
+        dirichlet_alpha: float = 0.03,
+        dirichlet_weight: float = 0.25,
     ):
         super().__init__(
             player_id=player_id, num_actions=num_actions, seed=seed
@@ -45,9 +47,15 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         self.c_puct = float(c_puct)
         self.T = int(T)
         self.S = int(S)
+        self.dirichlet_alpha = float(dirichlet_alpha)
+        self.dirichlet_weight = float(dirichlet_weight)
 
         self.device = device
         if net is None:
+            if model_path is None:
+                raise ValueError(
+                    "Either 'net' or 'model_path' must be provided"
+                )
             self.net = get_shared_az_model(
                 obs_size=obs_size,
                 num_actions=num_actions,
@@ -70,8 +78,16 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
             )
         return torch.from_numpy(obs).to(self.device)
 
-    def _expand(self, node: Node, state: pyspiel.State):
-        """Expand node and initialize edges with network priors."""
+    def _expand(
+        self, node: Node, state: pyspiel.State, add_dirichlet: bool = False
+    ):
+        """Expand node and initialize edges with network priors.
+
+        Args:
+            node: The node to expand.
+            state: The game state at this node.
+            add_dirichlet: If True, add Dirichlet noise to priors (for root).
+        """
         node.is_expanded = True
         node.legal_actions = list(state.legal_actions())
         for a in node.legal_actions:
@@ -86,6 +102,18 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         for a in node.legal_actions:
             mask[a] = 0.0
         priors = softmax_np(logits + mask)
+
+        # Add Dirichlet noise at root for exploration (standard AlphaZero)
+        if add_dirichlet and self.dirichlet_alpha > 0:
+            # Use numpy RNG seeded from self.rng for Dirichlet sampling
+            dir_seed = self.rng.getrandbits(32)
+            dir_rng = np.random.default_rng(dir_seed)
+            noise = dir_rng.dirichlet(
+                [self.dirichlet_alpha] * len(node.legal_actions)
+            )
+            eps = self.dirichlet_weight
+            for i, a in enumerate(node.legal_actions):
+                priors[a] = (1 - eps) * priors[a] + eps * noise[i]
 
         for a in node.legal_actions:
             node.edges[a].p = float(priors[a])
@@ -158,19 +186,47 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
         return pi
 
     def select_action(self, state: pyspiel.State) -> int:
-        """Select best action (greedy, temperature=0)."""
-        a, _ = self.select_action_with_pi(state, temperature=1e-8)
+        """Select best action (greedy, no exploration noise).
+
+        Used during evaluation. No Dirichlet noise, argmax over visits.
+        """
+        a, _ = self._select_action_impl(
+            state, temperature=1e-8, add_dirichlet=False
+        )
         return a
 
     def select_action_with_pi(
         self, state: pyspiel.State, temperature: float = 1.0
     ) -> Tuple[int, np.ndarray]:
-        """Select action with policy vector for training."""
+        """Select action with policy vector for training.
+
+        Used during self-play. Adds Dirichlet noise and samples from visits.
+        """
+        return self._select_action_impl(
+            state, temperature=temperature, add_dirichlet=True
+        )
+
+    def _select_action_impl(
+        self,
+        state: pyspiel.State,
+        temperature: float,
+        add_dirichlet: bool,
+    ) -> Tuple[int, np.ndarray]:
+        """Core action selection logic.
+
+        Args:
+            state: Current game state.
+            temperature: Sampling temperature (0 = greedy).
+            add_dirichlet: Whether to add Dirichlet noise at root.
+
+        Returns:
+            Tuple of (action, policy vector).
+        """
         root = self.tree.get_or_create(
             self.obs_key(state, self.player_id), state.current_player()
         )
         if not root.is_expanded:
-            self._expand(root, state)
+            self._expand(root, state, add_dirichlet=add_dirichlet)
 
         for _ in range(self.T):
             gamma = self.sampler.sample(state, self.rng)

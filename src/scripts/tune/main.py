@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import pathlib
 from datetime import datetime
 
@@ -10,7 +9,10 @@ import pyspiel
 import torch
 
 from nets.tiny_policy_value import TinyPolicyValueNet
-from scripts import eval, train
+from scripts.common.config import SamplerConfig, SearchConfig
+from scripts.common.seeding import derive_seed, set_global_seeds
+from scripts.eval.match import run_match
+from scripts.train.main import self_play, train_net
 from utils import utils
 
 
@@ -35,7 +37,7 @@ def main():
     args = parser.parse_args()
 
     utils.ensure_dir(pathlib.Path("runs"))
-    train.set_global_seeds(args.seed, deterministic_torch=False)
+    set_global_seeds(args.seed, deterministic_torch=False, log=True)
 
     game = pyspiel.load_game("phantom_go", {"board_size": args.board})
     num_actions = game.num_distinct_actions()
@@ -45,11 +47,20 @@ def main():
 
     def objective(trial: optuna.Trial) -> float:
         """Single trial: train briefly and evaluate against BS-MCTS."""
+        # MCTS parameters
         T = trial.suggest_int("T", 2, 16, log=True)
         S = trial.suggest_int("S", 2, 8)
+        c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
+        dirichlet_alpha = trial.suggest_float(
+            "dirichlet_alpha", 0.01, 0.5, log=True
+        )
+
+        # Training parameters
         lr = trial.suggest_float("lr", 1e-4, 3e-3, log=True)
         temp = trial.suggest_float("temp", 0.5, 1.5)
-        c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
+
+        # Belief sampler parameters
+        num_particles = trial.suggest_int("num_particles", 10, 64, log=True)
 
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         run_dir = pathlib.Path("runs") / f"{ts}_trial{trial.number:04d}"
@@ -78,49 +89,70 @@ def main():
             hidden=FIXED_HIDDEN,
         ).to(args.device)
 
-        examples, p0rets = train.self_play(
+        # Create config objects for this trial
+        search_cfg = SearchConfig(
+            T=T,
+            S=S,
+            c_puct=c_puct,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_weight=0.25,  # Fixed, only alpha is tuned
+        )
+        sampler_cfg = SamplerConfig(
+            num_particles=num_particles,
+            opp_tries_per_particle=8,
+            rebuild_max_tries=200,
+        )
+        run_id = f"trial{trial.number:04d}"
+
+        # Derive seeds deterministically for each trial
+        selfplay_seed = derive_seed(
+            args.seed, purpose="tune/selfplay", extra=str(trial.number)
+        )
+        examples, p0rets = self_play(
             game=game,
             net=net,
             num_games=args.games,
-            T=T,
-            S=S,
-            seed=args.seed + trial.number * 1_000_000,
+            search_cfg=search_cfg,
+            sampler_cfg=sampler_cfg,
+            base_seed=selfplay_seed,
             temperature=temp,
             device=args.device,
+            run_id=run_id,
         )
 
         metrics_path = run_dir / "train_metrics.jsonl"
-        train.train_net(
+        sgd_seed = derive_seed(
+            args.seed, purpose="tune/sgd", extra=str(trial.number)
+        )
+        train_net(
             net=net,
             examples=examples,
             epochs=args.epochs,
             batch_size=args.batch,
             lr=lr,
             device=args.device,
-            seed=args.seed + trial.number * 1_000_000,
+            seed=sgd_seed,
             metrics_path=metrics_path,
         )
 
         model_path = run_dir / "model.pt"
         torch.save(net.state_dict(), str(model_path))
 
-        # Point eval at this trial model
-        os.environ["AZ_MODEL_PATH"] = str(model_path)
-        os.environ["AZ_DEVICE"] = args.device
-
-        # Ensure eval uses same MCTS constants as training
-        os.environ["AZ_C_PUCT"] = str(c_puct)
-
-        # Evaluate vs baseline
-        res = eval.run_match(
-            game,
+        # Evaluate vs baseline with deterministically derived seed
+        eval_seed = derive_seed(
+            args.seed, purpose="tune/eval", extra=str(trial.number)
+        )
+        res = run_match(
+            game=game,
             a="azbsmcts",
             b="bsmcts",
             n=args.eval_n,
-            T=T,
-            S=S,
-            seed=args.seed + 42 + trial.number * 99,
+            search_cfg=search_cfg,
+            sampler_cfg=sampler_cfg,
+            seed=eval_seed,
             device=args.device,
+            model_path=str(model_path),
+            run_id=run_id,
         )
 
         items = list(res.items())

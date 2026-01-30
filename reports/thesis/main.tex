@@ -141,11 +141,12 @@ AlphaZero to Phantom Go therefore leads to conceptual and practical failures: th
 neural network is trained on information the agent does not actually have, and the
 resulting policy and value estimates become unreliable.
 
-The central question of this thesis is therefore the following:
+\subsection{Research Question}
 
-\textbf{How can AlphaZero-inspired methods be adapted to imperfect information games
-  such as Phantom Go, and how do they compare empirically to belief-state search
-  methods?}
+The central question of this thesis is therefore the following:
+How can AlphaZero-inspired methods be adapted to imperfect information games
+such as Phantom Go, and how do they compare empirically to belief-state search
+methods?
 
 To investigate this question, this thesis focuses on integrating belief-state reasoning into the AlphaZero framework in a practical and minimal way. Instead of assuming full observability, the proposed approach combines belief-state Monte Carlo Tree Search with a neural network trained through self-play, following the general structure of AlphaZero while explicitly accounting for hidden information.
 
@@ -162,10 +163,8 @@ how learning-based search methods behave in imperfect information settings and t
 identify the practical challenges that arise when extending AlphaZero-style ideas
 beyond perfect information games.
 
-\subsection{Research Questions}
 
 \subsection{Thesis Structure}
-
 
 \section{Background and Related Work}
 
@@ -347,6 +346,9 @@ The BS-MCTS agent is implemented using the OpenSpiel framework, which provides a
 The BS-MCTS implementation serves as a non-learning baseline in this thesis. Its behavior depends entirely on search and sampling rather than on learned evaluation functions. This makes it a useful point of comparison for assessing the impact of integrating belief-state reasoning with learning-based methods in later sections.
 
 \subsection{Summary}
+This section described a belief-state MCTS baseline for Phantom Go in which the agent explicitly accounts for hidden information by sampling multiple game states consistent with its observation history. Rather than committing to a single determinization, BS-MCTS evaluates candidate actions across multiple sampled hidden states and aggregates outcomes at the root, favoring actions that are robust under uncertainty.
+
+The implementation used in this thesis adopts a simplified variant of the original BS-MCTS framework: belief is represented operationally through sampled states, and no explicit belief distribution, opponent model, or probabilistic belief update mechanism is maintained beyond rejecting inconsistent samples. As a result, the agent remains purely search-based and serves as a clear non-learning baseline for assessing the effect of adding a learned policy and value function in the next section.
 
 \section{An AlphaZero-Inspired Method for Phantom Go}
 
@@ -406,7 +408,8 @@ In summary, the proposed agent adapts the AlphaZero framework to Phantom Go by i
 
 \subsection{Experimental Setup}
 
-All experiments are conducted on Phantom Go using the OpenSpiel implementation. Games are played on a standard $9 \times 9$ board with the default komi value of $7.5$.
+The main experiments are conducted on Phantom Go using the OpenSpiel implementation. Games are played on a standard $9 \times 9$ board with the default komi value of $7.5$.
+In addition, a small set of auxiliary experiments is conducted on Phantom Tic-Tac-Toe as a lower-complexity sanity-check domain.
 
 Training and evaluation are performed on a high-performance computing (HPC) cluster provided by the university. Unless otherwise stated, all agents are given identical per-move computational budgets to ensure fair comparison.
 
@@ -423,8 +426,7 @@ The following agents are evaluated:
 All agents use the same search parameters when applicable.
 
 \subsection{Training Configuration}
-
-Only the AlphaZero-inspired belief agent requires training. Training is performed through self-play using belief-state MCTS guided by the current neural network.
+Only the AlphaZero-inspired belief agent requires training. Training is performed through self-play using belief-state MCTS guided by the current neural network. The training configuration below was selected after minimal exploratory tuning (i.e., small trial runs to verify that learning proceeds and that search remains stable under the chosen budget), rather than a systematic hyperparameter optimization procedure.
 
 Unless otherwise specified, the following configuration is used:
 \begin{itemize}
@@ -436,10 +438,9 @@ Unless otherwise specified, the following configuration is used:
   \item Learning rate: $10^{-3}$
 \end{itemize}
 
-To study the effect of training budget, multiple models are trained with increasing numbers of self-play games. In particular, training budgets of 100, 300, 600, and 1000 self-play games are considered. All other parameters are held constant across these runs.
+To study the effect of training budget, multiple models are trained with increasing numbers of self-play games. In particular, training budgets of 100, 300, 600, and 1000 self-play games are considered, while all other parameters are held constant across runs.
 
-
-The search and training parameters used in this thesis were chosen to balance computational feasibility with experimental clarity. Rather than tuning parameters for maximum performance, all agents are evaluated under the same fixed computational budget to ensure a fair comparison. The number of simulations and belief samples per move was chosen to provide a minimal but non-trivial search budget that allows meaningful comparison between agents while remaining computationally feasible. As a result, the reported parameters should be interpreted as controlled defaults rather than optimized settings.
+Overall, the search and training parameters used in this thesis were chosen to balance computational feasibility with experimental clarity. Rather than tuning parameters for maximum performance, all agents are evaluated under the same fixed computational budget per move to ensure a fair comparison. The number of simulations and belief samples per move was chosen to provide a minimal but non-trivial search budget that enables meaningful comparisons between agents while remaining computationally feasible. Consequently, the reported parameters should be interpreted as controlled defaults rather than optimized settings.
 
 \subsection{Evaluation Protocol}
 

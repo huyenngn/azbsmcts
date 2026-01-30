@@ -18,7 +18,7 @@ from scripts.common.config import (
     to_jsonable,
 )
 from scripts.common.io import write_json
-from scripts.common.seeding import derive_seed
+from scripts.common.seeding import derive_seed, get_repro_fingerprint
 from utils import utils
 
 
@@ -185,6 +185,9 @@ def main():
     p.add_argument("--n", type=int, default=20)
     p.add_argument("--T", type=int, default=8)
     p.add_argument("--S", type=int, default=4)
+    p.add_argument("--c-puct", type=float, default=1.5)
+    p.add_argument("--dirichlet-alpha", type=float, default=0.0)
+    p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
     p.add_argument("--a", type=str, default="azbsmcts")
     p.add_argument("--b", type=str, default="bsmcts")
@@ -200,7 +203,13 @@ def main():
     args = p.parse_args()
 
     game_cfg = GameConfig.from_cli(args.game, args.game_params)
-    search_cfg = SearchConfig(T=args.T, S=args.S)
+    search_cfg = SearchConfig(
+        T=args.T,
+        S=args.S,
+        c_puct=args.c_puct,
+        dirichlet_alpha=args.dirichlet_alpha,
+        dirichlet_weight=args.dirichlet_weight,
+    )
     sampler_cfg = SamplerConfig(
         args.num_particles, args.opp_tries, args.rebuild_tries
     )
@@ -221,9 +230,12 @@ def main():
         model_path=args.model,
     )
 
+    # Include reproducibility fingerprint in output
+    fingerprint = get_repro_fingerprint(args.device)
     payload = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "config": to_jsonable(cfg),
+        "fingerprint": fingerprint.to_dict(),
         "results": [],
     }
 

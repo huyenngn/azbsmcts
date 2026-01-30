@@ -24,14 +24,16 @@ class GameConfig:
 class SearchConfig:
     T: int
     S: int
-    c_puct: float | None = None
+    c_puct: float
+    dirichlet_alpha: float
+    dirichlet_weight: float
 
 
 @dataclass(frozen=True)
 class SamplerConfig:
-    num_particles: int = 32
-    opp_tries_per_particle: int = 8
-    rebuild_max_tries: int = 200
+    num_particles: int
+    opp_tries_per_particle: int
+    rebuild_max_tries: int
 
 
 @dataclass(frozen=True)

@@ -27,7 +27,7 @@ from scripts.common.config import SamplerConfig, SearchConfig
 from scripts.common.seeding import derive_seed
 from utils import utils
 
-DEMO_MODEL_URL = "https://github.com/huyenngn/alphaghost/releases/download/demo-model/demo_model.pt"
+DEMO_MODEL_URL = "https://github.com/huyenngn/azbsmcts/releases/download/demo-model/demo_model.pt"
 DEFAULT_DEMO_MODEL_PATH = pathlib.Path("models/demo_model.pt")
 
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +53,9 @@ class ApiSettings:
 app.state.settings = ApiSettings(
     seed=0,
     device="cpu",
-    search_cfg=SearchConfig(T=4, S=2),
+    search_cfg=SearchConfig(
+        T=4, S=2, c_puct=1.5, dirichlet_alpha=0.0, dirichlet_weight=0.0
+    ),
     sampler_cfg=SamplerConfig(
         num_particles=32, opp_tries_per_particle=8, rebuild_max_tries=200
     ),
@@ -217,9 +219,7 @@ def _response(move_infos: list[PreviousMoveInfo]) -> GameStateResponse:
 @app.get("/")
 def root():
     return {
-        "name": "ALPHAGhOst",
-        "game": GAME_NAME,
-        "board_size": GAME_PARAMS["board_size"],
+        "name": "Phantom Go API",
         "active_game": app.state.state is not None
         and not app.state.state.is_terminal(),
     }
@@ -314,6 +314,9 @@ def main():
     # Search knobs (API defaults intentionally small)
     p.add_argument("--T", type=int, default=4)
     p.add_argument("--S", type=int, default=2)
+    p.add_argument("--c-puct", type=float, default=1.5)
+    p.add_argument("--dirichlet-alpha", type=float, default=0.0)
+    p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
     # Particle sampler knobs
     p.add_argument("--num-particles", type=int, default=32)
@@ -330,7 +333,13 @@ def main():
     app.state.settings = ApiSettings(
         seed=args.seed,
         device=args.device,
-        search_cfg=SearchConfig(T=args.T, S=args.S),
+        search_cfg=SearchConfig(
+            T=args.T,
+            S=args.S,
+            c_puct=args.c_puct,
+            dirichlet_alpha=args.dirichlet_alpha,
+            dirichlet_weight=args.dirichlet_weight,
+        ),
         sampler_cfg=SamplerConfig(
             num_particles=args.num_particles,
             opp_tries_per_particle=args.opp_tries,

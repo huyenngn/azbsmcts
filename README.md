@@ -55,132 +55,172 @@ as defined in `pyproject.toml`:
 
 - `api` – Start FastAPI backend for interactive play (demo only)
 - `train` – Run self-play training and log results to `runs/`
-- `eval` – Offline evaluation (single match or sweep)
 - `tune` – Optuna-based hyperparameter tuning
-- `plot` – Generate plots from training logs
+- `eval-match` – Single match evaluation between two agents
+- `eval-sweep` – Sweep evaluation across multiple checkpoints
+- `plot-train` – Generate plots from training logs
+- `plot-tune` – Generate plots from tuning results
+- `plot-eval` – Generate plots from evaluation results
 
 ## Experimental Workflow
 
-### 1. Training
+### 1. Hyperparameter Tuning (Optional)
 
-Run self-play training to produce a model checkpoint and logs:
-
-```sh
-uv run train \
-  --games 100 \
-  --T 8 \
-  --S 4 \
-  --epochs 5 \
-  --batch 64 \
-  --lr 1e-3 \
-  --device cuda \
-  --seed 0 \
-  --out models/model.pt
-```
-
-Each training run creates a directory under `runs/` containing:
-
-- `config.json` – full run configuration
-- `train_metrics.jsonl` – per-epoch training losses
-- `model.pt` – trained network checkpoint
-
----
-
-### 2. Hyperparameter Tuning
-
-Hyperparameter tuning uses Optuna.
-Each trial performs a short training run followed by evaluation against a
-BS-MCTS baseline.
+Optuna-based tuning for MCTS and learning parameters.
+This is intended for **exploratory tuning** to verify that learning proceeds
+and search remains stable.
 
 ```sh
 uv run tune \
-  --trials 200 \
-  --games 500 \
+  --trials 50 \
+  --games 100 \
   --epochs 5 \
-  --eval-n 20 \
+  --eval-n 30 \
+  --seed 42 \
   --storage sqlite:///runs/optuna.db \
-  --study-name az9x9
+  --study-name az_explore
 ```
 
-Each trial produces its own directory under `runs/`, containing:
+**Tuned parameters:**
 
-- `config.json`
-- `train_metrics.jsonl`
-- `model.pt`
-- `eval.json`
+| Parameter         | Range       | Description                       |
+| ----------------- | ----------- | --------------------------------- |
+| `T`               | 2–16        | MCTS iterations per move          |
+| `S`               | 2–8         | Belief samples (determinizations) |
+| `c_puct`          | 0.5–3.0     | PUCT exploration constant         |
+| `lr`              | 1e-4 – 3e-3 | Learning rate                     |
+| `temp`            | 0.5–1.5     | Action sampling temperature       |
+| `dirichlet_alpha` | 0.01–0.5    | Root exploration noise            |
+| `num_particles`   | 10–64       | Belief state particles            |
 
-Best trial summary is written to `runs/optuna_best.json`
+Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
+
+---
+
+### 2. Training
+
+Run self-play training with parameters from tuning or manual selection:
+
+```sh
+uv run train \
+  --games 1000 \
+  --checkpoint-interval 100 \
+  --T 8 \
+  --S 4 \
+  --c-puct 1.5 \
+  --dirichlet-alpha 0.03 \
+  --num-particles 32 \
+  --epochs 5 \
+  --batch 64 \
+  --lr 1e-3 \
+  --temp 1.0 \
+  --device cuda \
+  --seed 42
+```
+
+Training uses **interleaved self-play and learning** (like AlphaZero):
+
+1. Play `--checkpoint-interval` games using current network
+2. Train on all accumulated data
+3. Save checkpoint, repeat until `--games` reached
+
+Each training run creates a directory under `runs/` containing:
+
+- `config.json` – full configuration and reproducibility fingerprint
+- `train_metrics.jsonl` – per-iteration training losses
+- `model.pt` – final trained network
+- `checkpoints/` – intermediate checkpoints at each interval
+  - `checkpoint_games_00100.pt`, `checkpoint_games_00200.pt`, etc.
+
+> **Scaling study:** Use `--checkpoint-interval 100` with `--games 1000` to get
+> 10 checkpoints (at 100, 200, ..., 1000 games) in a single run. Then use
+> `eval-sweep` to evaluate all checkpoints.
 
 ---
 
 ### 3. Evaluation
 
-Evaluation is handled by a single script with two modes.
+#### Single Match
 
-#### Single Match Evaluation
-
-Evaluate one trained model against a baseline:
+Evaluate one model against a baseline:
 
 ```sh
-AZ_MODEL_PATH=models/model.pt \
-uv run eval match \
+uv run eval-match \
+  --model runs/<run_dir>/model.pt \
   --a azbsmcts \
   --b bsmcts \
+  --n 50 \
+  --T 8 \
+  --S 4 \
+  --c-puct 1.5 \
+  --seed 42 \
+  --out-json runs/<run_dir>/eval.json
+```
+
+#### Checkpoint Sweep
+
+Evaluate all checkpoints from a single training run:
+
+```sh
+uv run eval-sweep \
+  --run-dir runs/<run_dir> \
   --n 20 \
   --T 8 \
   --S 4 \
-  --seed 0 \
-  --out-json runs/eval_seed0.json
+  --c-puct 1.5 \
+  --seed 42
 ```
 
-This produces JSON suitable for tables and statistical analysis.
-
-#### Sweep Evaluation
-
-Evaluate multiple trained checkpoints (e.g. across training budgets):
-
-```sh
-uv run eval sweep \
-  --runs runs \
-  --n 20 \
-  --T 8 \
-  --S 4
-```
-
-This generates:
-
-- `plots/eval_winrate_vs_training.png`
-- `plots/eval_sweep.json`
+This generates `runs/<run_dir>/eval_sweep.jsonl` with win rates for each checkpoint.
 
 ---
 
 ### 4. Plotting
 
-Training metrics are logged as JSONL files `runs/*/train_metrics.jsonl`
-
-Generate per-run loss curves:
+#### Training Loss Curves
 
 ```sh
-uv run plot
+uv run plot-train --run-dir runs/<run_dir>
 ```
 
-Generate per-run plots plus a combined loss plot:
+Outputs to `runs/<run_dir>/`:
+
+- `train_loss.png` – loss curves (total, policy, value)
+
+#### Hyperparameter Analysis
 
 ```sh
-uv run plot --combined
+uv run plot-tune --study-name az_explore
 ```
 
-Plots are written to the `plots/` directory.
+Outputs to `plots/tune/`:
+
+- `optimization_history.png` – objective value over trials
+- `param_importances.png` – which hyperparameters matter most
+- `parallel_coordinate.png` – all params → objective in one view
+- `slice_plots.png` – objective vs each parameter individually
+- `tune_summary.json` – best params and value
+
+#### Evaluation Win Rates
+
+```sh
+uv run plot-eval --run-dir runs/<run_dir>
+```
+
+Outputs to `runs/<run_dir>/`:
+
+- `eval_winrate.png` – win rate vs training budget for that run
 
 ## Reproducibility
 
-All scripts support explicit random seeds. Seeds are applied to:
+All scripts support explicit random seeds via `--seed`. Seeds are derived deterministically using `derive_seed()` with namespacing to ensure:
 
-- Python's `random`
-- NumPy
-- PyTorch
+- Same base seed + same config → identical self-play action sequences
+- Same base seed + same config → identical evaluation match outcomes
 
-Due to stochastic belief sampling and Monte Carlo Tree Search, results are statistically reproducible but not bitwise deterministic. This is expected and appropriate for MCTS-based research.
+For maximum reproducibility, use `--deterministic-torch` (may reduce GPU performance).
+
+See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for detailed guarantees, limitations, and best practices.
 
 ## License
 

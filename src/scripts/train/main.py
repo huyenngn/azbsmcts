@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import random
 
 import numpy as np
 import pyspiel
@@ -23,24 +22,13 @@ from scripts.common.config import (
     to_jsonable,
 )
 from scripts.common.io import make_run_dir, write_json
-from scripts.common.seeding import derive_seed
+from scripts.common.seeding import (
+    derive_seed,
+    get_repro_fingerprint,
+    log_repro_fingerprint,
+    set_global_seeds,
+)
 from utils import utils
-
-
-def set_global_seeds(seed: int, deterministic_torch: bool = False):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-    if deterministic_torch:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        try:
-            torch.use_deterministic_algorithms(True)
-        except Exception:
-            pass
 
 
 def obs_tensor_side_to_move(state: pyspiel.State) -> np.ndarray:
@@ -56,6 +44,89 @@ class Example:
         self.z = z
 
 
+def self_play_one_game(
+    *,
+    game: pyspiel.Game,
+    net: TinyPolicyValueNet,
+    search_cfg: SearchConfig,
+    sampler_cfg: SamplerConfig,
+    base_seed: int,
+    device: str,
+    temperature: float,
+    run_id: str,
+    game_idx: int,
+) -> tuple[list[Example], float]:
+    """Play a single self-play game and return examples + player 0 return."""
+    state = game.new_initial_state()
+
+    a0, p0 = make_agent(
+        kind="azbsmcts",
+        player_id=0,
+        game=game,
+        search_cfg=search_cfg,
+        sampler_cfg=sampler_cfg,
+        base_seed=base_seed,
+        run_id=run_id,
+        purpose="train",
+        device=device,
+        model_path=None,
+        net=net,
+        game_idx=game_idx,
+    )
+    a1, p1 = make_agent(
+        kind="azbsmcts",
+        player_id=1,
+        game=game,
+        search_cfg=search_cfg,
+        sampler_cfg=sampler_cfg,
+        base_seed=base_seed,
+        run_id=run_id,
+        purpose="train",
+        device=device,
+        model_path=None,
+        net=net,
+        game_idx=game_idx,
+    )
+
+    if a0 is None or a1 is None or p0 is None or p1 is None:
+        raise ValueError("self-play agents must be non-random")
+
+    if not isinstance(a0, PolicyTargetMixin) or not isinstance(
+        a1, PolicyTargetMixin
+    ):
+        raise TypeError("self-play requires agents with select_action_with_pi")
+
+    traj: list[tuple[np.ndarray, np.ndarray, int]] = []
+
+    while not state.is_terminal():
+        p = state.current_player()
+        obs = obs_tensor_side_to_move(state)
+
+        if p == 0:
+            action, pi = a0.select_action_with_pi(
+                state, temperature=temperature
+            )
+        else:
+            action, pi = a1.select_action_with_pi(
+                state, temperature=temperature
+            )
+
+        traj.append((obs, pi.astype(np.float32), p))
+
+        actor = state.current_player()
+        state.apply_action(action)
+
+        # update both filters
+        p0.step(actor=actor, action=action, real_state_after=state)
+        p1.step(actor=actor, action=action, real_state_after=state)
+
+    rets = state.returns()
+    examples = [
+        Example(obs=obs, pi=pi, z=float(rets[p])) for obs, pi, p in traj
+    ]
+    return examples, float(rets[0])
+
+
 def self_play(
     *,
     game: pyspiel.Game,
@@ -68,80 +139,24 @@ def self_play(
     temperature: float,
     run_id: str,
 ) -> tuple[list[Example], list[float]]:
+    """Play multiple self-play games (legacy interface for tune.py)."""
     examples: list[Example] = []
     p0_returns: list[float] = []
 
     for gi in range(num_games):
-        state = game.new_initial_state()
-
-        a0, p0 = make_agent(
-            kind="azbsmcts",
-            player_id=0,
+        game_examples, p0_ret = self_play_one_game(
             game=game,
+            net=net,
             search_cfg=search_cfg,
             sampler_cfg=sampler_cfg,
             base_seed=base_seed,
-            run_id=run_id,
-            purpose="train",
             device=device,
-            model_path=None,
-            net=net,
+            temperature=temperature,
+            run_id=run_id,
             game_idx=gi,
         )
-        a1, p1 = make_agent(
-            kind="azbsmcts",
-            player_id=1,
-            game=game,
-            search_cfg=search_cfg,
-            sampler_cfg=sampler_cfg,
-            base_seed=base_seed,
-            run_id=run_id,
-            purpose="train",
-            device=device,
-            model_path=None,
-            net=net,
-            game_idx=gi,
-        )
-
-        if a0 is None or a1 is None or p0 is None or p1 is None:
-            raise ValueError("self-play agents must be non-random")
-
-        if not isinstance(a0, PolicyTargetMixin) or not isinstance(
-            a1, PolicyTargetMixin
-        ):
-            raise TypeError(
-                "self-play requires agents with select_action_with_pi"
-            )
-
-        traj: list[tuple[np.ndarray, np.ndarray, int]] = []
-
-        while not state.is_terminal():
-            p = state.current_player()
-            obs = obs_tensor_side_to_move(state)
-
-            if p == 0:
-                action, pi = a0.select_action_with_pi(
-                    state, temperature=temperature
-                )
-            else:
-                action, pi = a1.select_action_with_pi(
-                    state, temperature=temperature
-                )
-
-            traj.append((obs, pi.astype(np.float32), p))
-
-            actor = state.current_player()
-            state.apply_action(action)
-
-            # update both filters
-            p0.step(actor=actor, action=action, real_state_after=state)
-            p1.step(actor=actor, action=action, real_state_after=state)
-
-        rets = state.returns()
-        p0_returns.append(float(rets[0]))
-
-        for obs, pi, p in traj:
-            examples.append(Example(obs=obs, pi=pi, z=float(rets[p])))
+        examples.extend(game_examples)
+        p0_returns.append(p0_ret)
 
     return examples, p0_returns
 
@@ -225,8 +240,17 @@ def main():
     p.add_argument("--game-params", type=str, default='{"board_size": 9}')
 
     p.add_argument("--games", type=int, default=50)
+    p.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=0,
+        help="Save checkpoint every N games (0 = only final)",
+    )
     p.add_argument("--T", type=int, default=8)
     p.add_argument("--S", type=int, default=4)
+    p.add_argument("--c-puct", type=float, default=1.5)
+    p.add_argument("--dirichlet-alpha", type=float, default=0.03)
+    p.add_argument("--dirichlet-weight", type=float, default=0.25)
     p.add_argument("--epochs", type=int, default=5)
     p.add_argument("--batch", type=int, default=64)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -242,10 +266,21 @@ def main():
     p.add_argument("--rebuild-tries", type=int, default=200)
 
     args = p.parse_args()
-    set_global_seeds(args.seed, deterministic_torch=args.deterministic_torch)
+
+    # Set global seeds and log determinism mode
+    set_global_seeds(
+        args.seed, deterministic_torch=args.deterministic_torch, log=True
+    )
+    log_repro_fingerprint(args.device)
 
     game_cfg = GameConfig.from_cli(args.game, args.game_params)
-    search_cfg = SearchConfig(T=args.T, S=args.S)
+    search_cfg = SearchConfig(
+        T=args.T,
+        S=args.S,
+        c_puct=args.c_puct,
+        dirichlet_alpha=args.dirichlet_alpha,
+        dirichlet_weight=args.dirichlet_weight,
+    )
     sampler_cfg = SamplerConfig(
         num_particles=args.num_particles,
         opp_tries_per_particle=args.opp_tries,
@@ -270,7 +305,14 @@ def main():
         temperature=args.temp,
         sampler=sampler_cfg,
     )
-    write_json(run.config_path, to_jsonable(cfg))
+
+    # Write config with reproducibility fingerprint
+    fingerprint = get_repro_fingerprint(args.device)
+    config_payload = {
+        "config": to_jsonable(cfg),
+        "fingerprint": fingerprint.to_dict(),
+    }
+    write_json(run.config_path, config_payload)
 
     game = pyspiel.load_game(game_cfg.name, game_cfg.params)
     net = TinyPolicyValueNet(
@@ -278,37 +320,80 @@ def main():
         num_actions=game.num_distinct_actions(),
     ).to(args.device)
 
-    print("self-play...")
-    examples, p0rets = self_play(
-        game=game,
-        net=net,
-        num_games=args.games,
-        search_cfg=search_cfg,
-        sampler_cfg=sampler_cfg,
-        base_seed=args.seed,
-        device=args.device,
-        temperature=args.temp,
-        run_id=run_id,
-    )
-    print(f"collected examples: {len(examples)}")
-    print(f"p0 return mean over self-play games: {float(np.mean(p0rets)):.3f}")
+    # Checkpoints directory
+    checkpoints_dir = run.run_dir / "checkpoints"
+    utils.ensure_dir(checkpoints_dir)
 
-    print("training...")
-    train_net(
-        net=net,
-        examples=examples,
-        epochs=args.epochs,
-        batch_size=args.batch,
-        lr=args.lr,
-        device=args.device,
-        seed=derive_seed(args.seed, purpose="train/sgd", run_id=run_id),
-        metrics_path=run.train_metrics_path,
+    # Interleaved self-play and training (like real AlphaZero)
+    interval = (
+        args.checkpoint_interval
+        if args.checkpoint_interval > 0
+        else args.games
     )
+    all_examples: list[Example] = []
+    all_p0rets: list[float] = []
+    games_played = 0
+    checkpoint_idx = 0
 
-    # save model into run dir as canonical checkpoint
+    while games_played < args.games:
+        # Determine how many games to play this iteration
+        games_this_iter = min(interval, args.games - games_played)
+
+        print(
+            f"\n=== Self-play games {games_played + 1}-{games_played + games_this_iter} ==="
+        )
+
+        for gi in range(games_this_iter):
+            game_examples, p0_ret = self_play_one_game(
+                game=game,
+                net=net,
+                search_cfg=search_cfg,
+                sampler_cfg=sampler_cfg,
+                base_seed=args.seed,
+                device=args.device,
+                temperature=args.temp,
+                run_id=run_id,
+                game_idx=games_played + gi,
+            )
+            all_examples.extend(game_examples)
+            all_p0rets.append(p0_ret)
+
+        games_played += games_this_iter
+        print(f"total examples: {len(all_examples)}, games: {games_played}")
+        print(f"p0 return mean: {float(np.mean(all_p0rets)):.3f}")
+
+        # Train on all accumulated data
+        print(f"training on {len(all_examples)} examples...")
+        train_net(
+            net=net,
+            examples=all_examples,
+            epochs=args.epochs,
+            batch_size=args.batch,
+            lr=args.lr,
+            device=args.device,
+            seed=derive_seed(
+                args.seed,
+                purpose="train/sgd",
+                run_id=run_id,
+                extra=str(games_played),
+            ),
+            metrics_path=run.train_metrics_path,
+        )
+
+        # Save checkpoint after this training iteration
+        if args.checkpoint_interval > 0 or games_played == args.games:
+            ckpt_path = (
+                checkpoints_dir / f"checkpoint_games_{games_played:05d}.pt"
+            )
+            torch.save(net.state_dict(), str(ckpt_path))
+            print(f"checkpoint: {ckpt_path}")
+            checkpoint_idx += 1
+
+    # Save final model as canonical checkpoint
     torch.save(net.state_dict(), str(run.model_path))
-    print(f"saved: {run.model_path}")
+    print(f"\nfinal model: {run.model_path}")
     print(f"run dir: {run.run_dir}")
+    print(f"checkpoints: {checkpoint_idx}")
 
     if args.out_model:
         outp = pathlib.Path(args.out_model)

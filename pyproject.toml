@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 license = { text = "Apache-2.0" }
 name = "azbsmcts"
 version = "0.1.0"
-description = "Alpha Go inspired AI for Phantom Go"
+description = "AlphaZero inspired AI for Phantom Go"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -27,7 +27,9 @@ dev = [
 
 [project.scripts]
 train = "scripts.train.main:main"
+tune = "scripts.tune.main:main"
 plot-train = "scripts.train.plot:main"
+plot-tune = "scripts.tune.plot:main"
 eval-match = "scripts.eval.match:main"
 eval-sweep = "scripts.eval.sweep:main"
 plot-eval = "scripts.eval.plot:main"

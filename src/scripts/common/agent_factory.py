@@ -100,10 +100,13 @@ def make_agent(
                 sampler=sampler,
                 T=search_cfg.T,
                 S=search_cfg.S,
+                c_puct=search_cfg.c_puct,
                 seed=agent_seed,
                 device=device,
                 model_path=model_path,
                 net=net,
+                dirichlet_alpha=search_cfg.dirichlet_alpha,
+                dirichlet_weight=search_cfg.dirichlet_weight,
             ),
             particle,
         )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,15 +52,20 @@ _AZ_SHARED: _AZShared = _AZShared(
 def get_shared_az_model(
     obs_size: int,
     num_actions: int,
-    model_path: str | None = None,
-    device: str | None = None,
+    model_path: str,
+    device: str = "cpu",
 ) -> TinyPolicyValueNet:
-    """Load or create a shared model instance."""
-    if device is None:
-        device = os.environ.get("AZ_DEVICE", "cpu")
-    if model_path is None:
-        model_path = os.environ.get("AZ_MODEL_PATH", "models/model.pt")
+    """Load or create a shared model instance.
 
+    Args:
+        obs_size: Observation size for the network.
+        num_actions: Number of actions for the network.
+        model_path: Path to the model weights file.
+        device: Device to load the model on (default: "cpu").
+
+    Returns:
+        A shared TinyPolicyValueNet instance.
+    """
     if (
         _AZ_SHARED.net is not None
         and _AZ_SHARED.device == device
