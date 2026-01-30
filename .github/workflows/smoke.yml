@@ -42,7 +42,14 @@ jobs:
 
       - name: Smoke eval match
         run: |
-          RUN_DIR=$(ls -d artifacts/runs/smoke_* | head -1)
+          set -e
+          RUN_DIR=$(ls -d artifacts/runs/*_smoke_* 2>/dev/null | head -1)
+          if [ -z "$RUN_DIR" ]; then
+            echo "ERROR: No smoke run directory found"
+            ls -la artifacts/runs/ || echo "artifacts/runs/ does not exist"
+            exit 1
+          fi
+          echo "Using run directory: $RUN_DIR"
           uv run eval-match \
             --model "$RUN_DIR/model.pt" \
             --a azbsmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 \
@@ -50,7 +57,12 @@ jobs:
 
       - name: Smoke plot
         run: |
-          RUN_DIR=$(ls -d artifacts/runs/smoke_* | head -1)
+          set -e
+          RUN_DIR=$(ls -d artifacts/runs/*_smoke_* 2>/dev/null | head -1)
+          if [ -z "$RUN_DIR" ]; then
+            echo "ERROR: No smoke run directory found"
+            exit 1
+          fi
           uv run plot-train --run-dir "$RUN_DIR"
 
       - name: Upload smoke artifacts
