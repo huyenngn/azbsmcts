@@ -67,10 +67,13 @@ Run self-play training to produce a model checkpoint and logs:
 
 ```sh
 uv run train \
-  --games 50 \
+  --games 100 \
   --T 8 \
   --S 4 \
   --epochs 5 \
+  --batch 64 \
+  --lr 1e-3 \
+  --device cuda \
   --seed 0 \
   --out models/model.pt
 ```

@@ -26,11 +26,12 @@ dev = [
 ]
 
 [project.scripts]
+train = "scripts.train.main:main"
+plot-train = "scripts.train.plot:main"
+eval-match = "scripts.eval.match:main"
+eval-sweep = "scripts.eval.sweep:main"
+plot-eval = "scripts.eval.plot:main"
 api = "scripts.api:main"
-train = "scripts.train:main"
-eval = "scripts.eval:main"
-tune = "scripts.tune:main"
-plot = "scripts.plot:main"
 
 
 [tool.uv]

@@ -192,5 +192,15 @@ class AZBSMCTSAgent(BaseAgent, PolicyTargetMixin):
             return int(best_a), pi
 
         probs /= s
-        action = int(np.random.choice(np.arange(self.num_actions), p=probs))
-        return action, pi
+        r = self.rng.random()
+        cum = 0.0
+        action = 0
+        for a in range(self.num_actions):
+            pa = float(probs[a])
+            if pa <= 0.0:
+                continue
+            cum += pa
+            if r <= cum:
+                action = a
+                break
+        return int(action), pi

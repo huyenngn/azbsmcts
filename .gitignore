@@ -101,9 +101,11 @@ Thumbs.db
 uv.lock
 
 # Artifacts
-runs/
-plots/
-models/
+artifacts/
+
+# Model checkpoints (belt + suspenders)
+*.pt
+*.pth
 
 # Optuna / sqlite
 *.db

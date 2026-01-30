@@ -36,21 +36,29 @@ jobs:
 
       - name: Smoke train
         run: |
-          mkdir -p models runs plots
-          uv run train --games 8 --T 2 --S 2 --epochs 2 --seed 0 --out models/smoke.pt
+          mkdir -p artifacts/models artifacts/train
+          uv run train \
+            --games 8 --T 2 --S 2 --epochs 2 --seed 0 \
+            --out artifacts/models/smoke.pt \
+            --logdir artifacts/train/smoke
 
-      - name: Smoke eval
+      - name: Smoke eval match
         run: |
-          AZ_MODEL_PATH=models/smoke.pt uv run eval match \
-            --a azbsmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 --out-json runs/smoke_eval.json
+          mkdir -p artifacts/eval
+          AZ_MODEL_PATH=artifacts/models/smoke.pt uv run eval match \
+            --a azbsmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 \
+            --out-json artifacts/eval/smoke_match.json
 
       - name: Smoke plot
-        run: uv run plot
+        run: |
+          mkdir -p artifacts/plots
+          uv run plot train --runs artifacts/train --out artifacts/plots/train
+          uv run plot eval  --runs artifacts/eval  --out artifacts/plots/eval
 
       - name: Upload smoke artifacts
         uses: actions/upload-artifact@v4
         with:
           name: smoke-artifacts
           path: |
-            runs/smoke_eval.json
-            plots/
+            artifacts/eval/smoke_match.json
+            artifacts/plots/

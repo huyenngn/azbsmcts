@@ -438,6 +438,9 @@ Unless otherwise specified, the following configuration is used:
 
 To study the effect of training budget, multiple models are trained with increasing numbers of self-play games. In particular, training budgets of 100, 300, 600, and 1000 self-play games are considered. All other parameters are held constant across these runs.
 
+
+The search and training parameters used in this thesis were chosen to balance computational feasibility with experimental clarity. Rather than tuning parameters for maximum performance, all agents are evaluated under the same fixed computational budget to ensure a fair comparison. The number of simulations and belief samples per move was chosen to provide a minimal but non-trivial search budget that allows meaningful comparison between agents while remaining computationally feasible. As a result, the reported parameters should be interpreted as controlled defaults rather than optimized settings.
+
 \subsection{Evaluation Protocol}
 
 Evaluation is performed by playing a fixed number of games between agents under identical conditions. For each matchup, 200 games are played to reduce the effect of randomness. Color assignments are balanced such that each agent plays an equal number of games as black and white.

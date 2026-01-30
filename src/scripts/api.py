@@ -1,27 +1,30 @@
 """
-Phantom Go API backend.
+Phantom Go API backend (single game at a time).
 
-Single-client server for playing against azbsmcts, bsmcts, or random agents.
+Constraints (by design):
+- Only supports OpenSpiel "phantom_go" on 9x9 board.
+- Single active game/session at a time.
+- No environment variables for configuration.
 """
 
+from __future__ import annotations
+
+import argparse
 import enum
 import logging
-import os
 import pathlib
-import random
 import re
 import urllib.request
+from dataclasses import dataclass
 
 import fastapi
 import pydantic
 import pyspiel
 import uvicorn
 
-from agents import AZBSMCTSAgent, BSMCTSAgent
-from belief.samplers.particle import (
-    ParticleBeliefSampler,
-    ParticleDeterminizationSampler,
-)
+from scripts.common.agent_factory import make_agent, select_action
+from scripts.common.config import SamplerConfig, SearchConfig
+from scripts.common.seeding import derive_seed
 from utils import utils
 
 DEMO_MODEL_URL = "https://github.com/huyenngn/alphaghost/releases/download/demo-model/demo_model.pt"
@@ -32,11 +35,42 @@ logger = logging.getLogger("phantom_go_api")
 
 app = fastapi.FastAPI()
 
-app.state.game_state = None
+# Hard constraints
+GAME_NAME = "phantom_go"
+GAME_PARAMS = {"board_size": 9}
+
+
+@dataclass
+class ApiSettings:
+    seed: int
+    device: str
+    search_cfg: SearchConfig
+    sampler_cfg: SamplerConfig
+    model_path: pathlib.Path
+
+
+# Global server state (single game at a time)
+app.state.settings = ApiSettings(
+    seed=0,
+    device="cpu",
+    search_cfg=SearchConfig(T=4, S=2),
+    sampler_cfg=SamplerConfig(
+        num_particles=32, opp_tries_per_particle=8, rebuild_max_tries=200
+    ),
+    model_path=DEFAULT_DEMO_MODEL_PATH,
+)
+
+app.state.game = None
+app.state.state = None
 app.state.human_id = 0
 app.state.ai_id = 1
+app.state.policy = "random"  # "random" | "bsmcts" | "azbsmcts"
 app.state.agent = None
 app.state.particle = None
+app.state.rng = None
+app.state.game_number = (
+    0  # increments on /start so RNG changes deterministically between games
+)
 
 
 class PlayerColor(enum.Enum):
@@ -46,7 +80,7 @@ class PlayerColor(enum.Enum):
 
 class StartGameRequest(pydantic.BaseModel):
     player_id: int
-    policy: str
+    policy: str  # "random" | "bsmcts" | "azbsmcts"
 
 
 class MakeMoveRequest(pydantic.BaseModel):
@@ -67,7 +101,7 @@ class GameStateResponse(pydantic.BaseModel):
     returns: list[float] = []
 
 
-def _ensure_demo_model(path: pathlib.Path) -> str:
+def _ensure_model(path: pathlib.Path) -> str:
     """Download demo model if not present."""
     utils.ensure_dir(path.parent)
     if path.exists():
@@ -83,189 +117,229 @@ def _ensure_demo_model(path: pathlib.Path) -> str:
     return str(path)
 
 
-def _build_agent(game: pyspiel.Game, policy: str, ai_id: int):
-    """Create agent and particle sampler for the given policy."""
-    if policy == "random":
-        logger.info("Using random policy")
-        return None, None
-
-    num_actions = game.num_distinct_actions()
-    particle = ParticleBeliefSampler(
-        game=game,
-        ai_id=ai_id,
-        num_particles=32,
-        opp_tries_per_particle=8,
-        rebuild_max_tries=200,
-        seed=1234 + ai_id,
-    )
-    sampler = ParticleDeterminizationSampler(particle)
-
-    if policy == "bsmcts":
-        logger.info("Using BS-MCTS policy")
-        agent = BSMCTSAgent(
-            player_id=ai_id,
-            num_actions=num_actions,
-            sampler=sampler,
-            T=4,
-            S=2,
-            seed=1 + ai_id,
-        )
-        return agent, particle
-
-    if policy == "azbsmcts":
-        logger.info("Using AZ-BS-MCTS policy")
-        model_path = _ensure_demo_model(
-            pathlib.Path(
-                os.environ.get("AZ_MODEL_PATH", str(DEFAULT_DEMO_MODEL_PATH))
-            )
-        )
-        agent = AZBSMCTSAgent(
-            player_id=ai_id,
-            num_actions=num_actions,
-            obs_size=game.observation_tensor_size(),
-            sampler=sampler,
-            T=4,
-            S=2,
-            seed=3 + ai_id,
-            device=os.environ.get("AZ_DEVICE", "cpu"),
-            model_path=model_path,
-        )
-        return agent, particle
-
-    return None, None
-
-
 def _parse_move_info() -> PreviousMoveInfo | None:
-    """Parse move info from observation string."""
-    if app.state.game_state is None or app.state.game_state.is_terminal():
+    """Parse last-move info from the observation string."""
+    if app.state.state is None or app.state.state.is_terminal():
         return None
 
-    obs = app.state.game_state.observation_string(app.state.human_id)[-90:]
-    match = re.search(
+    # OpenSpiel phantom_go observation includes a short "Previous move was ..." tail.
+    obs_tail = app.state.state.observation_string(app.state.human_id)[-120:]
+    m = re.search(
         r"Previous move was (valid|observational)"
         r"(?:\s+and was a (pass)|\s+In previous move (\d+) stones were captured)?",
-        obs,
+        obs_tail,
     )
-    if not match:
+    if not m:
         return None
 
     return PreviousMoveInfo(
-        was_observational=match.group(1) == "observational",
-        was_pass=match.group(2) is not None,
-        captured_stones=int(match.group(3)) if match.group(3) else 0,
+        was_observational=(m.group(1) == "observational"),
+        was_pass=(m.group(2) is not None),
+        captured_stones=int(m.group(3)) if m.group(3) else 0,
     )
 
 
 def _apply_action(player: int, action: int) -> None:
-    """Apply action and update belief sampler."""
-    app.state.game_state.apply_action(action)
+    """Apply an action and update belief sampler (if any)."""
+    app.state.state.apply_action(action)
     if app.state.particle is not None:
         app.state.particle.step(
-            actor=player, action=action, real_state_after=app.state.game_state
+            actor=player, action=action, real_state_after=app.state.state
         )
+
+
+def _build_agent(policy: str) -> None:
+    """Create agent + particle sampler for the current game."""
+    settings: ApiSettings = app.state.settings
+
+    if policy == "random":
+        app.state.agent = None
+        app.state.particle = None
+        return
+
+    model_path = None
+    if policy == "azbsmcts":
+        model_path = _ensure_model(settings.model_path)
+
+    agent, particle = make_agent(
+        kind=policy,
+        player_id=app.state.ai_id,
+        game=app.state.game,
+        search_cfg=settings.search_cfg,
+        sampler_cfg=settings.sampler_cfg,
+        base_seed=settings.seed,
+        run_id="api",  # constant namespace, not a session concept
+        purpose="api",
+        device=settings.device,
+        model_path=model_path,
+        net=None,
+        game_idx=app.state.game_number,  # deterministic variation across games
+    )
+    app.state.agent = agent
+    app.state.particle = particle
 
 
 def _play_ai_turns() -> list[PreviousMoveInfo]:
     """Execute all consecutive AI turns."""
-    move_infos = []
-    while (
-        app.state.game_state is not None
-        and not app.state.game_state.is_terminal()
-        and app.state.game_state.current_player() == app.state.ai_id
-    ):
-        if app.state.agent is None:
-            action = random.choice(app.state.game_state.legal_actions())
-        else:
-            action = app.state.agent.select_action(app.state.game_state)
+    infos: list[PreviousMoveInfo] = []
 
+    while (
+        app.state.state is not None
+        and not app.state.state.is_terminal()
+        and app.state.state.current_player() == app.state.ai_id
+    ):
+        action = select_action(
+            app.state.policy, app.state.agent, app.state.state, app.state.rng
+        )
         logger.info("AI plays action %d", action)
         _apply_action(app.state.ai_id, action)
 
         info = _parse_move_info()
         if info:
             info.player = PlayerColor(app.state.ai_id)
-            move_infos.append(info)
+            infos.append(info)
 
-    return move_infos
+    return infos
 
 
-def _make_response(move_infos: list[PreviousMoveInfo]) -> GameStateResponse:
-    """Build response from current state."""
+def _response(move_infos: list[PreviousMoveInfo]) -> GameStateResponse:
+    st = app.state.state
     return GameStateResponse(
-        observation=app.state.game_state.observation_string(app.state.human_id)
-        if not app.state.game_state.is_terminal()
+        observation=st.observation_string(app.state.human_id)
+        if not st.is_terminal()
         else "",
         previous_move_infos=move_infos,
-        is_terminal=app.state.game_state.is_terminal(),
-        returns=list(app.state.game_state.returns()),
+        is_terminal=st.is_terminal(),
+        returns=list(st.returns()),
     )
 
 
 @app.get("/")
 def root():
-    """API info endpoint."""
-    return {"name": "ALPHAGhOst", "description": "Phantom Go AI backend"}
+    return {
+        "name": "ALPHAGhOst",
+        "game": GAME_NAME,
+        "board_size": GAME_PARAMS["board_size"],
+        "active_game": app.state.state is not None
+        and not app.state.state.is_terminal(),
+    }
 
 
 @app.post("/start")
 def start_game(request: StartGameRequest) -> GameStateResponse:
-    """Start a new game, replacing any existing game."""
-
     if request.player_id not in (0, 1):
         raise fastapi.HTTPException(
             status_code=400, detail="player_id must be 0 or 1"
         )
+    if request.policy not in ("random", "bsmcts", "azbsmcts"):
+        raise fastapi.HTTPException(
+            status_code=400, detail="policy must be random|bsmcts|azbsmcts"
+        )
+
+    app.state.game_number += 1
+    app.state.game = pyspiel.load_game(GAME_NAME, GAME_PARAMS)
+    app.state.state = app.state.game.new_initial_state()
+
+    app.state.human_id = request.player_id
+    app.state.ai_id = 1 - request.player_id
+    app.state.policy = request.policy
+
+    settings: ApiSettings = app.state.settings
+    rng_seed = derive_seed(
+        settings.seed,
+        purpose="api/rng",
+        run_id="api",
+        game_idx=app.state.game_number,
+        player_id=app.state.ai_id,
+    )
+    # Use python's Random for random policy / tie-breaks
+    import random
+
+    app.state.rng = random.Random(rng_seed)
 
     logger.info(
-        "Starting new game: human=%d, policy=%s",
-        request.player_id,
-        request.policy,
+        "Start game #%d: human=%d ai=%d policy=%s seed=%d T=%d S=%d",
+        app.state.game_number,
+        app.state.human_id,
+        app.state.ai_id,
+        app.state.policy,
+        settings.seed,
+        settings.search_cfg.T,
+        settings.search_cfg.S,
     )
 
-    game = pyspiel.load_game("phantom_go", {})
-    app.state.game_state = game.new_initial_state()
-    app.state.human_id = request.player_id
-    app.state.ai_id = 1 - app.state.human_id
-    app.state.agent, app.state.particle = _build_agent(
-        game, request.policy, app.state.ai_id
-    )
-
+    _build_agent(app.state.policy)
     move_infos = _play_ai_turns()
-    return _make_response(move_infos)
+    return _response(move_infos)
 
 
 @app.post("/step")
-def make_move(request: MakeMoveRequest) -> GameStateResponse:
-    """Apply human move and execute AI response."""
-    if app.state.game_state is None:
+def step(request: MakeMoveRequest) -> GameStateResponse:
+    st = app.state.state
+    if st is None:
         raise fastapi.HTTPException(status_code=400, detail="No active game")
-    if app.state.game_state.is_terminal():
+    if st.is_terminal():
         raise fastapi.HTTPException(status_code=400, detail="Game is over")
-    if app.state.game_state.current_player() != app.state.human_id:
+    if st.current_player() != app.state.human_id:
         raise fastapi.HTTPException(status_code=400, detail="Not your turn")
-    if request.action not in app.state.game_state.legal_actions():
+    if request.action not in st.legal_actions():
         raise fastapi.HTTPException(status_code=400, detail="Illegal action")
 
     logger.info("Human plays action %d", request.action)
     _apply_action(app.state.human_id, request.action)
 
-    move_infos = []
+    infos: list[PreviousMoveInfo] = []
     info = _parse_move_info()
     if info:
         info.player = PlayerColor(app.state.human_id)
-        move_infos.append(info)
+        infos.append(info)
 
-    move_infos.extend(_play_ai_turns())
+    infos.extend(_play_ai_turns())
 
-    if app.state.game_state.is_terminal():
-        logger.info("Game ended: returns=%s", app.state.game_state.returns())
+    if st.is_terminal():
+        logger.info("Game ended: returns=%s", st.returns())
 
-    return _make_response(move_infos)
+    return _response(infos)
 
 
 def main():
-    """Run the API server."""
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    p = argparse.ArgumentParser()
+    p.add_argument("--host", type=str, default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8000)
+
+    # Explicit (no env vars)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--device", type=str, default="cpu")
+
+    # Search knobs (API defaults intentionally small)
+    p.add_argument("--T", type=int, default=4)
+    p.add_argument("--S", type=int, default=2)
+
+    # Particle sampler knobs
+    p.add_argument("--num-particles", type=int, default=32)
+    p.add_argument("--opp-tries", type=int, default=8)
+    p.add_argument("--rebuild-tries", type=int, default=200)
+
+    # Model path for azbsmcts
+    p.add_argument(
+        "--model-path", type=str, default=str(DEFAULT_DEMO_MODEL_PATH)
+    )
+
+    args = p.parse_args()
+
+    app.state.settings = ApiSettings(
+        seed=args.seed,
+        device=args.device,
+        search_cfg=SearchConfig(T=args.T, S=args.S),
+        sampler_cfg=SamplerConfig(
+            num_particles=args.num_particles,
+            opp_tries_per_particle=args.opp_tries,
+            rebuild_max_tries=args.rebuild_tries,
+        ),
+        model_path=pathlib.Path(args.model_path),
+    )
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

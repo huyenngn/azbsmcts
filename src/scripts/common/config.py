@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class GameConfig:
+    name: str
+    params: dict[str, Any]
+
+    @staticmethod
+    def from_cli(game: str, game_params_json: str) -> "GameConfig":
+        params = {}
+        if game_params_json:
+            params = json.loads(game_params_json)
+            if not isinstance(params, dict):
+                raise ValueError("--game-params must be a JSON object")
+        return GameConfig(name=game, params=params)
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    T: int
+    S: int
+    c_puct: float | None = None
+
+
+@dataclass(frozen=True)
+class SamplerConfig:
+    num_particles: int = 32
+    opp_tries_per_particle: int = 8
+    rebuild_max_tries: int = 200
+
+
+@dataclass(frozen=True)
+class TrainBudget:
+    games: int
+    epochs: int
+    batch: int
+
+
+@dataclass(frozen=True)
+class TrainConfig:
+    seed: int
+    device: str
+    deterministic_torch: bool
+    run_name: str
+    out_model_path: str
+    game: GameConfig
+    search: SearchConfig
+    budget: TrainBudget
+    lr: float
+    temperature: float
+    sampler: SamplerConfig
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    seed: int
+    device: str
+    game: GameConfig
+    search: SearchConfig
+    sampler: SamplerConfig
+    n_games: int
+    a: str
+    b: str
+    flip_colors: bool
+    model_path: str
+
+
+def to_jsonable(obj: Any) -> Any:
+    if hasattr(obj, "__dataclass_fields__"):
+        return asdict(obj)
+    return obj
