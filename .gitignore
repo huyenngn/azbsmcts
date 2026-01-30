@@ -101,7 +101,9 @@ Thumbs.db
 uv.lock
 
 # Artifacts
-artifacts/
+models/
+runs/
+plots/
 
 # Model checkpoints (belt + suspenders)
 *.pt

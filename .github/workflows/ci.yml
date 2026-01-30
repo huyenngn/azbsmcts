@@ -40,5 +40,9 @@ jobs:
       - name: CLI smoke
         run: |
           uv run train --help
-          uv run eval --help
-          uv run plot --help
+          uv run tune --help
+          uv run eval-match --help
+          uv run eval-sweep --help
+          uv run plot-train --help
+          uv run plot-tune --help
+          uv run plot-eval --help
