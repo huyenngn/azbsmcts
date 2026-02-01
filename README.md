@@ -106,6 +106,7 @@ Run self-play training with parameters from tuning or manual selection:
 uv run train \
   --games 1000 \
   --checkpoint-interval 100 \
+  --replay-max-examples 100000 \
   --T 8 \
   --S 4 \
   --c-puct 1.5 \
