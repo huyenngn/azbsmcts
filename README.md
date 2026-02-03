@@ -76,7 +76,7 @@ uv run tune \
   --trials 50 \
   --games 10 \
   --epochs 2 \
-  --eval-n 20 \
+  --eval-n 10 \
   --batch 64 \
   --seed 42 \
   --device cuda \
@@ -88,13 +88,13 @@ uv run tune \
 
 | Parameter         | Range       | Description                       |
 | ----------------- | ----------- | --------------------------------- |
-| `T`               | 2–16        | MCTS iterations per move          |
-| `S`               | 2–8         | Belief samples (determinizations) |
+| `T`               | 6–12        | MCTS iterations per move          |
+| `S`               | 4–6         | Belief samples (determinizations) |
 | `c_puct`          | 0.5–3.0     | PUCT exploration constant         |
 | `lr`              | 1e-4 – 3e-3 | Learning rate                     |
 | `temp`            | 0.5–1.5     | Action sampling temperature       |
 | `dirichlet_alpha` | 0.01–0.5    | Root exploration noise            |
-| `num_particles`   | 10–64       | Belief state particles            |
+| `num_particles`   | 12–36       | Belief state particles            |
 
 Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
 

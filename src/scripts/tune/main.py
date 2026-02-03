@@ -47,8 +47,8 @@ def main() -> None:
     def objective(trial: optuna.Trial) -> float:
         """Single trial: train briefly and evaluate against BS-MCTS."""
         # MCTS parameters
-        T = trial.suggest_int("T", 2, 16, log=True)
-        S = trial.suggest_int("S", 2, 8)
+        T = trial.suggest_int("T", 6, 12, log=True)
+        S = trial.suggest_int("S", 4, 6)
         c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
         dirichlet_alpha = trial.suggest_float(
             "dirichlet_alpha", 0.01, 0.5, log=True
@@ -59,7 +59,7 @@ def main() -> None:
         temp = trial.suggest_float("temp", 0.5, 1.5)
 
         # Belief sampler parameters
-        num_particles = trial.suggest_int("num_particles", 10, 64, log=True)
+        num_particles = trial.suggest_int("num_particles", 12, 36, log=True)
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         run_dir = pathlib.Path("runs") / f"{ts}_trial{trial.number:04d}"
