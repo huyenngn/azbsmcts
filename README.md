@@ -74,9 +74,9 @@ and search remains stable.
 ```sh
 uv run tune \
   --trials 50 \
-  --games 10 \
+  --games 100 \
   --epochs 2 \
-  --eval-n 10 \
+  --eval-n 20 \
   --batch 64 \
   --seed 42 \
   --device cuda \
@@ -86,15 +86,13 @@ uv run tune \
 
 **Tuned parameters:**
 
-| Parameter         | Range       | Description                       |
-| ----------------- | ----------- | --------------------------------- |
-| `T`               | 6–12        | MCTS iterations per move          |
-| `S`               | 4–6         | Belief samples (determinizations) |
-| `c_puct`          | 0.5–3.0     | PUCT exploration constant         |
-| `lr`              | 1e-4 – 3e-3 | Learning rate                     |
-| `temp`            | 0.5–1.5     | Action sampling temperature       |
-| `dirichlet_alpha` | 0.01–0.5    | Root exploration noise            |
-| `num_particles`   | 12–36       | Belief state particles            |
+| Parameter       | Range       | Description                       |
+| --------------- | ----------- | --------------------------------- |
+| `T`             | 6–12        | MCTS iterations per move          |
+| `S`             | 4–6         | Belief samples (determinizations) |
+| `c_puct`        | 0.5–3.0     | PUCT exploration constant         |
+| `lr`            | 2e-4 – 3e-3 | Learning rate                     |
+| `num_particles` | 10–48       | Belief state particles            |
 
 Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
 
@@ -117,7 +115,6 @@ uv run train \
   --epochs 5 \
   --batch 64 \
   --lr 1e-3 \
-  --temp 1.0 \
   --device cuda \
   --seed 42
 ```

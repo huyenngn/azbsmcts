@@ -81,3 +81,7 @@ class State:
       self._state.serialize()
     )
     return State(cloned_state, set(self._attempted_actions))
+
+  def game_length(self) -> int:
+    """Return the length of the game so far."""
+    return len(self._state.history())

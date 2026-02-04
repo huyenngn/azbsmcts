@@ -29,7 +29,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     obs_size: int,
     sampler: samplers.DeterminizationSampler,
     c_puct: float = 1.5,
-    T: int = 64,
+    T: int = 100,
     S: int = 8,
     seed: int = 0,
     device: str = "cpu",
@@ -101,9 +101,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
       mask[a] = 0.0
     priors = softmax.softmax_np(logits + mask)
 
-    # Add Dirichlet noise at root for exploration (standard AlphaZero)
     if add_dirichlet and self.dirichlet_alpha > 0:
-      # Use numpy RNG seeded from self.rng for Dirichlet sampling
       dir_seed = self.rng.getrandbits(32)
       dir_rng = np.random.default_rng(dir_seed)
       noise = dir_rng.dirichlet(
@@ -196,12 +194,14 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     return a
 
   def select_action_with_pi(
-    self, state: openspiel.State, temperature: float = 1.0
+    self, state: openspiel.State
   ) -> tuple[int, np.ndarray]:
     """Select action with policy vector for training.
 
     Used during self-play. Adds Dirichlet noise and samples from visits.
     """
+    # Favor exploration for the first 20 plies, then switch to greedy
+    temperature = 1.0 if state.game_length() < 20 else 1e-8
     return self._select_action_impl(
       state, temperature=temperature, add_dirichlet=True
     )

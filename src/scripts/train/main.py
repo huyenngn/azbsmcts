@@ -36,7 +36,6 @@ def self_play_one_game(
   sampler_cfg: config.SamplerConfig,
   base_seed: int,
   device: str,
-  temperature: float,
   run_id: str,
   game_idx: int,
 ) -> tuple[list[Example], float]:
@@ -87,9 +86,9 @@ def self_play_one_game(
     obs = obs_tensor_side_to_move(state)
 
     if p == 0:
-      action, pi = a0.select_action_with_pi(state, temperature=temperature)
+      action, pi = a0.select_action_with_pi(state)
     else:
-      action, pi = a1.select_action_with_pi(state, temperature=temperature)
+      action, pi = a1.select_action_with_pi(state)
 
     traj.append((obs, pi.astype(np.float32), p))
 
@@ -114,7 +113,6 @@ def self_play(
   sampler_cfg: config.SamplerConfig,
   base_seed: int,
   device: str,
-  temperature: float,
   run_id: str,
 ) -> tuple[list[Example], list[float]]:
   """Play multiple self-play games (legacy interface for tune.py)."""
@@ -129,7 +127,6 @@ def self_play(
       sampler_cfg=sampler_cfg,
       base_seed=base_seed,
       device=device,
-      temperature=temperature,
       run_id=run_id,
       game_idx=gi,
     )
@@ -257,7 +254,6 @@ def load_config_from_file(config_path: pathlib.Path) -> config.TrainConfig:
     search=search_cfg,
     budget=budget_cfg,
     lr=cfg_dict["lr"],
-    temperature=cfg_dict["temperature"],
     sampler=sampler_cfg,
   )
 
@@ -286,7 +282,6 @@ def main() -> None:
   p.add_argument("--epochs", type=int, default=5)
   p.add_argument("--batch", type=int, default=64)
   p.add_argument("--lr", type=float, default=1e-3)
-  p.add_argument("--temp", type=float, default=1.0)
 
   p.add_argument("--runs-root", type=str, default="runs")
   p.add_argument("--run-name", type=str, default="aztrain")
@@ -392,7 +387,6 @@ def main() -> None:
         games=args.games, epochs=args.epochs, batch=args.batch
       ),
       lr=args.lr,
-      temperature=args.temp,
       sampler=sampler_cfg,
     )
 
@@ -495,7 +489,6 @@ def main() -> None:
         sampler_cfg=cfg.sampler,
         base_seed=cfg.seed,
         device=cfg.device,
-        temperature=cfg.temperature,
         run_id=run_id,
         game_idx=games_played + gi,
       )

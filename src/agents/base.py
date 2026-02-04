@@ -46,6 +46,6 @@ class PolicyTargetMixin:
   """Mixin for agents that provide policy targets for training."""
 
   def select_action_with_pi(
-    self, state: openspiel.State, temperature: float = 1.0
+    self, state: openspiel.State
   ) -> tuple[int, np.ndarray]:
     raise NotImplementedError

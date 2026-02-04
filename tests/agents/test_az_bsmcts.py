@@ -100,7 +100,7 @@ class TestAZBSMCTSAgent:
       net=net,
     )
     state = game.new_initial_state()
-    action, pi = agent.select_action_with_pi(state, temperature=1.0)
+    action, pi = agent.select_action_with_pi(state)
 
     assert action in state.legal_actions()
     assert isinstance(pi, np.ndarray)
@@ -166,7 +166,7 @@ class TestAZBSMCTSAgent:
     state = game.new_initial_state()
 
     # Get policy with noise (training)
-    _, pi_train = agent_noisy.select_action_with_pi(state, temperature=1.0)
+    _, pi_train = agent_noisy.select_action_with_pi(state)
 
     # Agent without noise
     belief2 = samplers.ParticleBeliefSampler(
@@ -186,9 +186,7 @@ class TestAZBSMCTSAgent:
       dirichlet_weight=0.0,
     )
 
-    _, pi_no_noise = agent_no_noise.select_action_with_pi(
-      state, temperature=1.0
-    )
+    _, pi_no_noise = agent_no_noise.select_action_with_pi(state)
 
     # Policies should differ due to Dirichlet noise
     # (Note: they could be the same by chance, but unlikely with alpha=0.3)

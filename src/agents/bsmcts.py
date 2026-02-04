@@ -25,7 +25,6 @@ class BSMCTSAgent(agents.BaseAgent):
     c_uct: float = 1.4,
     T: int = 64,
     S: int = 8,
-    rollout_limit: int = 512,
     seed: int = 0,
   ):
     super().__init__(player_id=player_id, num_actions=num_actions, seed=seed)
@@ -34,7 +33,6 @@ class BSMCTSAgent(agents.BaseAgent):
     self.c_uct = float(c_uct)
     self.T = int(T)
     self.S = int(S)
-    self.rollout_limit = int(rollout_limit)
 
   def select_action(self, state: openspiel.State) -> int:
     """Select the best action via MCTS over sampled determinizations."""
@@ -67,7 +65,7 @@ class BSMCTSAgent(agents.BaseAgent):
   def _rollout(self, state: openspiel.State) -> float:
     """Random playout to terminal or depth limit."""
     steps = 0
-    while (not state.is_terminal()) and steps < self.rollout_limit:
+    while not state.is_terminal():
       la = state.legal_actions()
       if not la:
         break

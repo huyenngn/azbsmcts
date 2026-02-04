@@ -50,13 +50,9 @@ def main() -> None:
     T = trial.suggest_int("T", 6, 12, log=True)
     S = trial.suggest_int("S", 4, 6)
     c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
-    dirichlet_alpha = trial.suggest_float(
-      "dirichlet_alpha", 0.01, 0.5, log=True
-    )
 
     # Training parameters
     lr = trial.suggest_float("lr", 1e-4, 3e-3, log=True)
-    temp = trial.suggest_float("temp", 0.5, 1.5)
 
     # Belief sampler parameters
     num_particles = trial.suggest_int("num_particles", 12, 36, log=True)
@@ -89,12 +85,13 @@ def main() -> None:
     ).to(args.device)
 
     # Create config objects for this trial
+    # Dirichlet alpha and weight are fixed
     search_cfg = config.SearchConfig(
       T=T,
       S=S,
       c_puct=c_puct,
-      dirichlet_alpha=dirichlet_alpha,
-      dirichlet_weight=0.25,  # Fixed, only alpha is tuned
+      dirichlet_alpha=0.03,
+      dirichlet_weight=0.25,
     )
     sampler_cfg = config.SamplerConfig(
       num_particles=num_particles,
@@ -114,7 +111,6 @@ def main() -> None:
       search_cfg=search_cfg,
       sampler_cfg=sampler_cfg,
       base_seed=selfplay_seed,
-      temperature=temp,
       device=args.device,
       run_id=run_id,
     )
