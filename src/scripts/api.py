@@ -55,7 +55,9 @@ app.state.settings = ApiSettings(
   search_cfg=config.SearchConfig(
     T=4, S=2, c_puct=1.5, dirichlet_alpha=0.0, dirichlet_weight=0.0
   ),
-  sampler_cfg=config.SamplerConfig(num_particles=32, rebuild_max_tries=200),
+  sampler_cfg=config.SamplerConfig(
+    num_particles=32, max_matching_opp_actions=8, rebuild_max_tries=200
+  ),
   model_path=DEFAULT_DEMO_MODEL_PATH,
 )
 
@@ -315,6 +317,7 @@ def main() -> None:
 
   # Particle sampler
   p.add_argument("--num-particles", type=int, default=32)
+  p.add_argument("--max-matching-opp-actions", type=int, default=8)
   p.add_argument("--rebuild-tries", type=int, default=200)
 
   # Model path for azbsmcts
@@ -336,6 +339,7 @@ def main() -> None:
     ),
     sampler_cfg=config.SamplerConfig(
       num_particles=args.num_particles,
+      max_matching_opp_actions=args.max_matching_opp_actions,
       rebuild_max_tries=args.rebuild_tries,
     ),
     model_path=pathlib.Path(args.model_path),

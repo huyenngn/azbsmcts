@@ -32,6 +32,7 @@ class SearchConfig:
 @dataclasses.dataclass(frozen=True)
 class SamplerConfig:
   num_particles: int
+  max_matching_opp_actions: int
   rebuild_max_tries: int
 
 

@@ -23,25 +23,14 @@ class _StepRecord:
 
 
 class ParticleDeterminizationSampler:
-  """Belief sampler using particle filtering with optional opponent policy guidance.
-
-  Key properties:
-  - Maintains a set of *unique* particles (states) consistent with the AI player's
-    observation history (as captured by observation_string(ai_id)).
-  - On opponent turns, it can branch into up to K matching successor actions per particle.
-  - When branching creates too many candidates, it resamples back to num_particles
-    (weighted by opponent policy within the matching set when available).
-  - Never hard-crashes training: sample() will attempt rebuild and then fall back.
-  """
+  """Belief sampler using particle filtering with optional opponent policy guidance."""
 
   def __init__(
     self,
     game: openspiel.Game,
     ai_id: int,
     num_particles: int = 32,
-    # Max number of matching opponent actions to keep per particle per opponent step.
     max_matching_opp_actions: int = 8,
-    # How many rebuild attempts to try before falling back.
     rebuild_max_tries: int = 50,
     seed: int = 0,
     opponent_policy: OpponentPolicy | None = None,

@@ -108,6 +108,7 @@ class TestResumeHelpers:
       lr=0.001,
       sampler=config.SamplerConfig(
         num_particles=8,
+        max_matching_opp_actions=2,
         rebuild_max_tries=100,
       ),
     )

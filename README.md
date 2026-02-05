@@ -110,7 +110,8 @@ uv run train \
   --T 8 \
   --S 4 \
   --c-puct 1.0 \
-  --num-particles 12 \
+  --num-particles 16 \
+  --max-matching-opp-actions 4 \
   --epochs 5 \
   --batch 64 \
   --lr 1e-4 \
@@ -141,6 +142,7 @@ It is possible to resume training from a previous run:
 ```sh
 uv run train \
   --resume \
+  --checkpoint-interval 10 \
   --run-dir runs/<run_dir>
 ```
 

@@ -56,6 +56,9 @@ def main() -> None:
 
     # Belief sampler parameters
     num_particles = trial.suggest_int("num_particles", 12, 36, log=True)
+    max_matching_opp_actions = trial.suggest_int(
+      "max_matching_opp_actions", 1, 8, log=True
+    )
 
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = pathlib.Path("runs") / f"{ts}_trial{trial.number:04d}"
@@ -95,6 +98,7 @@ def main() -> None:
     )
     sampler_cfg = config.SamplerConfig(
       num_particles=num_particles,
+      max_matching_opp_actions=max_matching_opp_actions,
       rebuild_max_tries=200,
     )
     run_id = f"trial{trial.number:04d}"
