@@ -105,13 +105,11 @@ Run self-play training with parameters from tuning or manual selection:
 ```sh
 uv run train \
   --games 1000 \
-  --checkpoint-interval 100 \
+  --checkpoint-interval 10 \
   --replay-max-examples 50000 \
   --T 8 \
   --S 4 \
   --c-puct 1.0 \
-  --dirichlet-alpha 0.03 \
-  --dirichlet-weight 0.25 \
   --num-particles 12 \
   --epochs 5 \
   --batch 64 \

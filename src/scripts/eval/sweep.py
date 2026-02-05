@@ -86,9 +86,7 @@ def main() -> None:
     dirichlet_alpha=args.dirichlet_alpha,
     dirichlet_weight=args.dirichlet_weight,
   )
-  sampler_cfg = config.SamplerConfig(
-    args.num_particles, args.opp_tries, args.rebuild_tries
-  )
+  sampler_cfg = config.SamplerConfig(args.num_particles, args.rebuild_tries)
 
   game = openspiel.Game(game_cfg.name, game_cfg.params)
 

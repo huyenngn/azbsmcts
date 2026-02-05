@@ -95,7 +95,6 @@ def main() -> None:
     )
     sampler_cfg = config.SamplerConfig(
       num_particles=num_particles,
-      opp_tries_per_particle=8,
       rebuild_max_tries=200,
     )
     run_id = f"trial{trial.number:04d}"

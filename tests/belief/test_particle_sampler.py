@@ -42,7 +42,7 @@ class TestParticleBeliefSampler:
     state = game.new_initial_state()
 
     # Sample many actions and verify they're all legal
-    actions = [sampler._sample_opponent_action(state) for _ in range(100)]
+    actions = sampler._get_opponent_actions(state)
     legal = state.legal_actions()
     for a in actions:
       assert a in legal
@@ -67,8 +67,11 @@ class TestParticleBeliefSampler:
     state = game.new_initial_state()
 
     # Sample many actions - should heavily favor action 4
-    actions = [sampler._sample_opponent_action(state) for _ in range(100)]
-    center_count = sum(1 for a in actions if a == 4)
+    center_count = 0
+    for _ in range(1000):
+      actions = sampler._get_opponent_actions(state)
+      if actions[0] == 4:
+        center_count += 1
 
     # With 99% probability, center should be chosen most of the time
     assert center_count > 80, f"Expected >80 center moves, got {center_count}"
@@ -87,7 +90,7 @@ class TestParticleBeliefSampler:
     state = game.new_initial_state()
 
     # Should fall back to uniform when all probs are zero
-    action = sampler._sample_opponent_action(state)
+    action = sampler._get_opponent_actions(state)[0]
     assert action in state.legal_actions()
 
   def test_reset_clears_state(self, game: openspiel.Game) -> None:
@@ -121,10 +124,6 @@ class TestParticleBeliefSampler:
     # Should have built some particles
     assert len(sampler._particles) > 0
 
-
-class TestParticleDeterminizationSampler:
-  """Test ParticleDeterminizationSampler adapter."""
-
   def test_sample_returns_state(self, game: openspiel.Game) -> None:
     """Test that sample returns a valid state."""
     sampler = samplers.ParticleDeterminizationSampler(
@@ -145,7 +144,7 @@ class TestParticleDeterminizationSampler:
   ) -> None:
     """Test fallback to cloning when no particles available."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=10, rebuild_max_tries=0, seed=42
+      game=game, ai_id=0, num_particles=10, seed=42
     )
 
     # No history, should return initial state

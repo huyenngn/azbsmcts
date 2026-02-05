@@ -187,7 +187,6 @@ def main() -> None:
   p.add_argument("--out-json", type=str, default="")
 
   p.add_argument("--num-particles", type=int, default=32)
-  p.add_argument("--opp-tries", type=int, default=8)
   p.add_argument("--rebuild-tries", type=int, default=200)
 
   args = p.parse_args()
@@ -200,9 +199,7 @@ def main() -> None:
     dirichlet_alpha=args.dirichlet_alpha,
     dirichlet_weight=args.dirichlet_weight,
   )
-  sampler_cfg = config.SamplerConfig(
-    args.num_particles, args.opp_tries, args.rebuild_tries
-  )
+  sampler_cfg = config.SamplerConfig(args.num_particles, args.rebuild_tries)
 
   game = openspiel.Game(game_cfg.name, game_cfg.params)
 

@@ -281,7 +281,7 @@ def main() -> None:
   p.add_argument("--dirichlet-weight", type=float, default=0.25)
   p.add_argument("--epochs", type=int, default=5)
   p.add_argument("--batch", type=int, default=64)
-  p.add_argument("--lr", type=float, default=1e-3)
+  p.add_argument("--lr", type=float, default=1e-4)
 
   p.add_argument("--runs-root", type=str, default="runs")
   p.add_argument("--run-name", type=str, default="aztrain")
@@ -307,7 +307,6 @@ def main() -> None:
   )
 
   p.add_argument("--num-particles", type=int, default=32)
-  p.add_argument("--opp-tries", type=int, default=32)
   p.add_argument("--rebuild-tries", type=int, default=200)
 
   args = p.parse_args()
@@ -328,7 +327,6 @@ def main() -> None:
   )
   sampler_cfg = config.SamplerConfig(
     num_particles=args.num_particles,
-    opp_tries_per_particle=args.opp_tries,
     rebuild_max_tries=args.rebuild_tries,
   )
 

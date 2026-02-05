@@ -96,7 +96,6 @@ class TestBSMCTSReproducibility:
       game=game,
       ai_id=player_id,
       num_particles=8,
-      opp_tries_per_particle=4,
       rebuild_max_tries=50,
       seed=particle_seed,
     )

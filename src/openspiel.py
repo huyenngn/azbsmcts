@@ -85,3 +85,7 @@ class State:
   def game_length(self) -> int:
     """Return the length of the game so far."""
     return len(self._state.history())
+
+  def serialize(self) -> str:
+    """Return a string serialization of the state."""
+    return self._state.serialize()
