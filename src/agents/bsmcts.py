@@ -19,15 +19,15 @@ class BSMCTSAgent(agents.BaseAgent):
 
   def __init__(
     self,
+    game: openspiel.Game,
     player_id: int,
-    num_actions: int,
     sampler: samplers.DeterminizationSampler,
     c_uct: float = 1.4,
     T: int = 64,
     S: int = 8,
     seed: int = 0,
   ):
-    super().__init__(player_id=player_id, num_actions=num_actions, seed=seed)
+    super().__init__(game=game, player_id=player_id, seed=seed)
     self.tree = tree.BeliefTree()
     self.sampler = sampler
     self.c_uct = float(c_uct)
@@ -46,7 +46,7 @@ class BSMCTSAgent(agents.BaseAgent):
     for _ in range(self.T):
       gamma = self.sampler.sample()
       for _ in range(self.S):
-        self._search(gamma.clone())
+        self._search(self.game.deserialize_state(gamma))
 
     return root.get_most_visited_action()
 

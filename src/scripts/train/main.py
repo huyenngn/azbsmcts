@@ -306,9 +306,9 @@ def main() -> None:
     help="Cap replay buffer size (0 = unlimited)",
   )
 
-  p.add_argument("--num-particles", type=int, default=120)
-  p.add_argument("--max-matching-opp-actions", type=int, default=64)
-  p.add_argument("--rebuild-tries", type=int, default=200)
+  p.add_argument("--max-num-particles", type=int, default=150)
+  p.add_argument("--max-matches-per-particle", type=int, default=100)
+  p.add_argument("--rebuild-tries", type=int, default=30)
 
   args = p.parse_args()
 
@@ -327,9 +327,9 @@ def main() -> None:
     dirichlet_weight=args.dirichlet_weight,
   )
   sampler_cfg = config.SamplerConfig(
-    num_particles=args.num_particles,
-    max_matching_opp_actions=args.max_matching_opp_actions,
-    rebuild_max_tries=args.rebuild_tries,
+    max_num_particles=args.max_num_particles,
+    max_matches_per_particle=args.max_matches_per_particle,
+    rebuild_tries=args.rebuild_tries,
   )
 
   # Handle run directory creation

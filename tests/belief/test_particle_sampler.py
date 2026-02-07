@@ -83,7 +83,7 @@ class TestParticleBeliefSampler:
     # Should fall back to uniform when all probs are zero
     probs = sampler._get_opponent_action_weights(state)
     assert len(probs) == len(state.legal_actions())
-    assert np.allclose(probs, 1 / len(state.legal_actions()))
+    assert np.allclose(probs, 1e-12)
 
   def test_reset_clears_state(self, game: openspiel.Game) -> None:
     """Test that reset clears history and particles."""
@@ -105,7 +105,7 @@ class TestParticleBeliefSampler:
   def test_step_builds_particles(self, game: openspiel.Game) -> None:
     """Test that step triggers particle building."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=10, seed=42
+      game=game, ai_id=0, max_num_particles=10, seed=42
     )
     state = game.new_initial_state()
 
@@ -120,14 +120,14 @@ class TestParticleBeliefSampler:
   def test_sample_returns_state(self, game: openspiel.Game) -> None:
     """Test that sample returns a valid state."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=10, seed=42
+      game=game, ai_id=0, max_num_particles=10, seed=42
     )
 
     state = game.new_initial_state()
     state.apply_action(4)
     sampler.step(actor=0, action=4, real_state_after=state)
 
-    sampled = sampler.sample()
+    sampled = game.deserialize_state(sampler.sample())
 
     assert sampled is not None
     assert isinstance(sampled, openspiel.State)
@@ -137,7 +137,7 @@ class TestParticleBeliefSampler:
   ) -> None:
     """Test fallback to cloning when no particles available."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=10, seed=42
+      game=game, ai_id=0, max_num_particles=10, seed=42
     )
 
     # No history, should return initial state

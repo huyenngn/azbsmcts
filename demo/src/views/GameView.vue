@@ -25,7 +25,6 @@ import DrawerHeader from '@/components/ui/drawer/DrawerHeader.vue'
 import DrawerTitle from '@/components/ui/drawer/DrawerTitle.vue'
 import DrawerDescription from '@/components/ui/drawer/DrawerDescription.vue'
 
-const THINKING_DELAY = 300
 const NUM_PARTICLES_TO_SHOW = 10
 
 const props = defineProps<{
@@ -102,9 +101,7 @@ async function handleMove(action: number) {
     isTerminal.value = response.data.is_terminal
     returns.value = response.data.returns
   } finally {
-    setTimeout(() => {
-      isLoading.value = false
-    }, THINKING_DELAY)
+    isLoading.value = false
   }
 }
 

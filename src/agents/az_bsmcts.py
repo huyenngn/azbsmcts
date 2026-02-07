@@ -24,8 +24,8 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
 
   def __init__(
     self,
+    game: openspiel.Game,
     player_id: int,
-    num_actions: int,
     obs_size: int,
     sampler: samplers.DeterminizationSampler,
     c_puct: float = 1.5,
@@ -38,7 +38,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     dirichlet_alpha: float = 0.03,
     dirichlet_weight: float = 0.25,
   ):
-    super().__init__(player_id=player_id, num_actions=num_actions, seed=seed)
+    super().__init__(game=game, player_id=player_id, seed=seed)
     self.tree = tree.BeliefTree()
     self.sampler = sampler
     self.c_puct = float(c_puct)
@@ -53,7 +53,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
         raise ValueError("Either 'net' or 'model_path' must be provided")
       self.net = nets.get_shared_az_model(
         obs_size=obs_size,
-        num_actions=num_actions,
+        num_actions=game.num_distinct_actions(),
         model_path=model_path,
         device=device,
       )
@@ -62,6 +62,9 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
       self.net.eval()
 
     self._obs_size = int(obs_size)
+
+    # Pending leaf evaluations for batching: list of (node, state, needs_expand)
+    self._pending_leaves: list[tuple[tree.Node, openspiel.State, bool]] = []
 
   def _state_tensor_side_to_move(self, state: openspiel.State) -> torch.Tensor:
     """Get observation tensor from current player's perspective."""
@@ -96,7 +99,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
       logits, _v = self.net(x)
       logits = logits.squeeze(0).detach().cpu().numpy()
 
-    mask = np.full((self.num_actions,), -1e9, dtype=np.float32)
+    mask = np.full((self.game.num_distinct_actions(),), -1e9, dtype=np.float32)
     for a in node.legal_actions:
       mask[a] = 0.0
     priors = softmax.softmax_np(logits + mask)
@@ -114,21 +117,74 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     for a in node.legal_actions:
       node.edges[a].p = float(priors[a])
 
-  def _leaf_value_root_perspective(self, state: openspiel.State) -> float:
-    """Get network value and convert to root player's perspective."""
+  def _leaf_value_root_perspective(
+    self, state: openspiel.State, value: float | None = None
+  ) -> float:
+    """Get network value and convert to root player's perspective.
+
+    Args:
+        state: The game state at the leaf.
+        value: Pre-computed value from batch evaluation. If None, runs inference.
+    """
+    if value is None:
+      with torch.no_grad():
+        x = self._state_tensor_side_to_move(state).unsqueeze(0)
+        _, v = self.net(x)
+        value = float(v.item())
+    return value if state.current_player() == self.player_id else -value
+
+  def _evaluate_pending_leaves(self) -> None:
+    """Batch evaluate all pending leaf nodes and apply results."""
+    if not self._pending_leaves:
+      return
+
+    # Build batch tensor
+    tensors = [
+      self._state_tensor_side_to_move(state)
+      for _, state, _ in self._pending_leaves
+    ]
+    batch = torch.stack(tensors, dim=0)
+
     with torch.no_grad():
-      x = self._state_tensor_side_to_move(state).unsqueeze(0)
-      _, v = self.net(x)
-      v_cur = float(v.item())
-    return v_cur if state.current_player() == self.player_id else -v_cur
+      logits_batch, values_batch = self.net(batch)
+      logits_batch = logits_batch.detach().cpu().numpy()
+      values_batch = values_batch.detach().cpu().numpy()
+
+    # Apply results to each pending leaf
+    for i, (node, state, needs_expand) in enumerate(self._pending_leaves):
+      if needs_expand and not node.is_expanded:
+        # Apply expansion with pre-computed logits
+        node.is_expanded = True
+        node.legal_actions = list(state.legal_actions())
+        for a in node.legal_actions:
+          node.edges.setdefault(a, tree.EdgeStats())
+
+        logits = logits_batch[i]
+        mask = np.full(
+          (self.game.num_distinct_actions(),), -1e9, dtype=np.float32
+        )
+        for a in node.legal_actions:
+          mask[a] = 0.0
+        priors = softmax.softmax_np(logits + mask)
+
+        for a in node.legal_actions:
+          node.edges[a].p = float(priors[a])
+
+    self._pending_leaves.clear()
 
   def _puct(self, parent: tree.Node, edge: tree.EdgeStats) -> float:
     q = edge.q
     u = self.c_puct * edge.p * math.sqrt(parent.n + 1.0) / (1.0 + edge.n)
     return q + u
 
-  def _search(self, state: openspiel.State) -> float:
-    """Recursive MCTS search with PUCT selection and NN evaluation."""
+  def _search(self, state: openspiel.State, batch_mode: bool = False) -> float:
+    """Recursive MCTS search with PUCT selection and NN evaluation.
+
+    Args:
+        state: Current game state (will be mutated during search).
+        batch_mode: If True, queue leaf for batch evaluation instead of
+            immediate inference. Returns 0.0 as placeholder.
+    """
     if state.is_terminal():
       return float(state.returns()[self.player_id])
 
@@ -138,6 +194,10 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     node.n += 1
 
     if not node.is_expanded:
+      if batch_mode:
+        # Queue for batch evaluation
+        self._pending_leaves.append((node, state, True))
+        return 0.0  # Placeholder, will be refined in next iteration
       self._expand(node, state)
       return self._leaf_value_root_perspective(state)
 
@@ -153,10 +213,13 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
         best_a = a
 
     if best_a is None:
+      if batch_mode:
+        self._pending_leaves.append((node, state, False))
+        return 0.0
       return self._leaf_value_root_perspective(state)
 
     state.apply_action(best_a)
-    v_root = self._search(state)
+    v_root = self._search(state, batch_mode=batch_mode)
 
     edge = node.edges[best_a]
     edge.n += 1
@@ -166,7 +229,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
   def _root_visit_policy(
     self, root: tree.Node, temperature: float
   ) -> np.ndarray:
-    pi = np.zeros((self.num_actions,), dtype=np.float32)
+    pi = np.zeros((self.game.num_distinct_actions(),), dtype=np.float32)
     if not root.edges:
       return pi
 
@@ -232,13 +295,15 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     for _ in range(self.T):
       gamma = self.sampler.sample()
       for _ in range(self.S):
-        self._search(gamma.clone())
+        self._search(self.game.deserialize_state(gamma), batch_mode=True)
+      # Batch evaluate all leaves collected in this iteration
+      self._evaluate_pending_leaves()
 
     pi = self._root_visit_policy(root, temperature=float(temperature))
 
     legal = set(state.legal_actions())
     probs = pi.copy()
-    for a in range(self.num_actions):
+    for a in range(self.game.num_distinct_actions()):
       if a not in legal:
         probs[a] = 0.0
 
@@ -252,7 +317,7 @@ class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
     r = self.rng.random()
     cum = 0.0
     action = 0
-    for a in range(self.num_actions):
+    for a in range(self.game.num_distinct_actions()):
       pa = float(probs[a])
       if pa <= 0.0:
         continue

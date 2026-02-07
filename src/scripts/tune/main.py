@@ -20,7 +20,8 @@ def main() -> None:
   parser.add_argument("--trials", type=int, default=25)
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument("--device", type=str, default="cpu")
-  parser.add_argument("--board", type=int, default=9)
+  parser.add_argument("--game", type=str, default="phantom_go")
+  parser.add_argument("--game-params", type=str, default='{"board_size": 9}')
 
   parser.add_argument("--games", type=int, default=30)
   parser.add_argument("--epochs", type=int, default=2)
@@ -33,12 +34,16 @@ def main() -> None:
     "--storage", type=str, default="sqlite:///runs/optuna.db"
   )
   parser.add_argument("--direction", type=str, default="maximize")
+
+  parser.add_argument("--max-num-particles", type=int, default=150)
+  parser.add_argument("--max-matches-per-particle", type=int, default=100)
+  parser.add_argument("--rebuild-tries", type=int, default=30)
   args = parser.parse_args()
 
   utils.ensure_dir(pathlib.Path("runs"))
   seeding.set_global_seeds(args.seed, deterministic_torch=False, log=True)
 
-  game = openspiel.Game("phantom_go", {"board_size": args.board})
+  game = openspiel.Game(args.game, args.game_params)
   num_actions = game.num_distinct_actions()
 
   # FIXED ARCHITECTURE (keep tuning simple and checkpoints compatible)
@@ -50,6 +55,12 @@ def main() -> None:
     T = trial.suggest_int("T", 6, 12, log=True)
     S = trial.suggest_int("S", 4, 6)
     c_puct = trial.suggest_float("c_puct", 0.5, 3.0, log=True)
+    dirichlet_alpha = trial.suggest_float(
+      "dirichlet_alpha", 0.01, 0.1, log=True
+    )
+    dirichlet_weight = trial.suggest_float(
+      "dirichlet_weight", 0.1, 0.5, log=True
+    )
 
     # Training parameters
     lr = trial.suggest_float("lr", 1e-4, 3e-3, log=True)
@@ -87,13 +98,13 @@ def main() -> None:
       T=T,
       S=S,
       c_puct=c_puct,
-      dirichlet_alpha=0.03,
-      dirichlet_weight=0.25,
+      dirichlet_alpha=dirichlet_alpha,
+      dirichlet_weight=dirichlet_weight,
     )
     sampler_cfg = config.SamplerConfig(
-      num_particles=120,
-      max_matching_opp_actions=64,
-      rebuild_max_tries=200,
+      max_num_particles=args.max_num_particles,
+      max_matches_per_particle=args.max_matches_per_particle,
+      rebuild_tries=args.rebuild_tries,
     )
     run_id = f"trial{trial.number:04d}"
 

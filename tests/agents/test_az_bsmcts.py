@@ -29,7 +29,7 @@ def net(game: openspiel.Game) -> nets.TinyPolicyValueNet:
 def sampler(game: openspiel.Game) -> samplers.ParticleDeterminizationSampler:
   """Create a particle sampler for testing."""
   return samplers.ParticleDeterminizationSampler(
-    game=game, ai_id=0, num_particles=8, seed=42
+    game=game, ai_id=0, max_num_particles=8, seed=42
   )
 
 
@@ -44,8 +44,8 @@ class TestAZBSMCTSAgent:
   ) -> None:
     """Test agent initialization."""
     agent = agents.AZBSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       obs_size=game.observation_tensor_size(),
       sampler=sampler,
       T=4,
@@ -67,8 +67,8 @@ class TestAZBSMCTSAgent:
   ) -> None:
     """Test that select_action returns a legal action."""
     agent = agents.AZBSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       obs_size=game.observation_tensor_size(),
       sampler=sampler,
       T=4,
@@ -89,8 +89,8 @@ class TestAZBSMCTSAgent:
   ) -> None:
     """Test that select_action_with_pi returns action and policy vector."""
     agent = agents.AZBSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       obs_size=game.observation_tensor_size(),
       sampler=sampler,
       T=4,
@@ -116,11 +116,11 @@ class TestAZBSMCTSAgent:
 
     def make_agent() -> agents.AZBSMCTSAgent:
       samp = samplers.ParticleDeterminizationSampler(
-        game=game, ai_id=0, num_particles=8, seed=123
+        game=game, ai_id=0, max_num_particles=8, seed=123
       )
       return agents.AZBSMCTSAgent(
+        game=game,
         player_id=0,
-        num_actions=game.num_distinct_actions(),
         obs_size=game.observation_tensor_size(),
         sampler=samp,
         T=4,
@@ -149,8 +149,8 @@ class TestAZBSMCTSAgent:
     """Test that Dirichlet noise affects policy in training mode."""
     # Agent with Dirichlet noise
     agent_noisy = agents.AZBSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       obs_size=game.observation_tensor_size(),
       sampler=sampler,
       T=4,
@@ -168,11 +168,11 @@ class TestAZBSMCTSAgent:
 
     # Agent without noise
     sampler2 = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=8, seed=42
+      game=game, ai_id=0, max_num_particles=8, seed=42
     )
     agent_no_noise = agents.AZBSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       obs_size=game.observation_tensor_size(),
       sampler=sampler2,
       T=4,
@@ -198,12 +198,12 @@ class TestBSMCTSAgent:
   def test_select_action_returns_legal(self, game: openspiel.Game) -> None:
     """Test that BS-MCTS agent returns legal actions."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, num_particles=8, seed=42
+      game=game, ai_id=0, max_num_particles=8, seed=42
     )
 
     agent = agents.BSMCTSAgent(
+      game=game,
       player_id=0,
-      num_actions=game.num_distinct_actions(),
       sampler=sampler,
       T=4,
       S=2,

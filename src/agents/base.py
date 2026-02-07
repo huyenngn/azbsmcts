@@ -28,9 +28,9 @@ class AgentConfig:
 class BaseAgent:
   """Base class providing RNG and observation utilities."""
 
-  def __init__(self, player_id: int, num_actions: int, seed: int = 0):
+  def __init__(self, game: openspiel.Game, player_id: int, seed: int = 0):
+    self.game = game
     self.player_id = player_id
-    self.num_actions = num_actions
     self.rng = random.Random(seed)
 
   def obs_key(self, state: openspiel.State, player_id: int) -> str:

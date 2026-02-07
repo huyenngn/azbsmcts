@@ -37,9 +37,9 @@ def make_belief_sampler(
   return samplers.ParticleDeterminizationSampler(
     game=game,
     ai_id=player_id,
-    num_particles=sampler_cfg.num_particles,
-    max_matching_opp_actions=sampler_cfg.max_matching_opp_actions,
-    rebuild_max_tries=sampler_cfg.rebuild_max_tries,
+    max_num_particles=sampler_cfg.max_num_particles,
+    max_matches_per_particle=sampler_cfg.max_matches_per_particle,
+    rebuild_tries=sampler_cfg.rebuild_tries,
     seed=seed,
     opponent_policy=opponent_policy,
   )
@@ -125,8 +125,8 @@ def make_agent(
   if kind == "bsmcts":
     return (
       agents.BSMCTSAgent(
+        game=game,
         player_id=player_id,
-        num_actions=num_actions,
         sampler=sampler,
         T=search_cfg.T,
         S=search_cfg.S,
@@ -138,8 +138,8 @@ def make_agent(
   if kind == "azbsmcts":
     return (
       agents.AZBSMCTSAgent(
+        game=game,
         player_id=player_id,
-        num_actions=num_actions,
         obs_size=obs_size,
         sampler=sampler,
         T=search_cfg.T,

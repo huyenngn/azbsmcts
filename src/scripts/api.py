@@ -31,7 +31,6 @@ DEMO_MODEL_URL = (
 )
 DEFAULT_DEMO_MODEL_PATH = pathlib.Path("models/demo_model.pt")
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("phantom_go_api")
 
 app = fastapi.FastAPI()
@@ -49,18 +48,7 @@ class ApiSettings:
   model_path: pathlib.Path
 
 
-app.state.settings = ApiSettings(
-  seed=0,
-  device="cpu",
-  search_cfg=config.SearchConfig(
-    T=4, S=2, c_puct=1.5, dirichlet_alpha=0.0, dirichlet_weight=0.0
-  ),
-  sampler_cfg=config.SamplerConfig(
-    num_particles=120, max_matching_opp_actions=64, rebuild_max_tries=200
-  ),
-  model_path=DEFAULT_DEMO_MODEL_PATH,
-)
-
+app.state.settings = None
 app.state.game = None
 app.state.state = None
 app.state.human_id = 0
@@ -306,7 +294,7 @@ def step(request: MakeMoveRequest) -> GameStateResponse:
 
 
 @app.get("/particles")
-def get_particles(num_particles: int) -> ParticlesResponse:
+def get_particles(max_num_particles: int) -> ParticlesResponse:
   if app.state.game is None or app.state.particle is None:
     raise fastapi.HTTPException(status_code=400, detail="No active game")
 
@@ -314,7 +302,7 @@ def get_particles(num_particles: int) -> ParticlesResponse:
   logger.info("Particle filter has %d particles", total)
 
   observations: list[str] = []
-  particles = app.state.particle.get_particles(num_particles)
+  particles = app.state.particle.sample_unique_particles(max_num_particles)
   for p in particles:
     obs = p.observation_string(app.state.human_id)
     observations.append(obs)
@@ -338,16 +326,24 @@ def main() -> None:
   p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
   # Particle sampler
-  p.add_argument("--num-particles", type=int, default=120)
-  p.add_argument("--max-matching-opp-actions", type=int, default=64)
-  p.add_argument("--rebuild-tries", type=int, default=200)
+  p.add_argument("--max-num-particles", type=int, default=150)
+  p.add_argument("--max-matches-per-particle", type=int, default=100)
+  p.add_argument("--rebuild-tries", type=int, default=10)
 
   # Model path for azbsmcts
   p.add_argument(
     "--model-path", type=str, default=str(DEFAULT_DEMO_MODEL_PATH)
   )
 
+  # Debug logging
+  p.add_argument("--debug", action="store_true", help="Enable debug logging")
+
   args = p.parse_args()
+
+  if args.debug:
+    logging.basicConfig(level=logging.DEBUG)
+  else:
+    logging.basicConfig(level=logging.INFO)
 
   app.state.settings = ApiSettings(
     seed=args.seed,
@@ -360,9 +356,9 @@ def main() -> None:
       dirichlet_weight=args.dirichlet_weight,
     ),
     sampler_cfg=config.SamplerConfig(
-      num_particles=args.num_particles,
-      max_matching_opp_actions=args.max_matching_opp_actions,
-      rebuild_max_tries=args.rebuild_tries,
+      max_num_particles=args.max_num_particles,
+      max_matches_per_particle=args.max_matches_per_particle,
+      rebuild_tries=args.rebuild_tries,
     ),
     model_path=pathlib.Path(args.model_path),
   )

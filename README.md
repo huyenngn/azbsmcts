@@ -80,6 +80,9 @@ uv run tune \
   --batch 64 \
   --seed 42 \
   --device cuda \
+  --max-num-particles 150 \
+  --max-matches-per-particle 100 \
+  --rebuild-tries 20 \
   --storage sqlite:///runs/optuna.db \
   --study-name az_explore
 ```
@@ -116,9 +119,9 @@ uv run train \
   --batch 64 \
   --lr 1e-4 \
   --replay-max-examples 50000 \
-  --num-particles 120 \
-  --max-matching-opp-actions 64 \
-  --rebuild-tries 200
+  --max-num-particles 150 \
+  --max-matches-per-particle 100 \
+  --rebuild-tries 20
 ```
 
 Training uses **interleaved self-play and learning** (like AlphaZero):
@@ -168,9 +171,9 @@ uv run eval-match \
   --dirichlet-weight 0.25 \
   --a random \
   --b bsmcts \
-  --num-particles 120 \
-  --max-matching-opp-actions 64 \
-  --rebuild-tries 200 \
+  --max-num-particles 150 \
+  --max-matches-per-particle 100 \
+  --rebuild-tries 20 \
   --out-json runs/<run_dir>/bsmcts_vs_random.json
 ```
 
@@ -189,9 +192,9 @@ uv run eval-sweep \
   --c-puct 1.0 \
   --dirichlet-alpha 0.03 \
   --dirichlet-weight 0.25 \
-  --num-particles 120 \
-  --max-matching-opp-actions 64 \
-  --rebuild-tries 200
+  --max-num-particles 150 \
+  --max-matches-per-particle 100 \
+  --rebuild-tries 20
 ```
 
 This generates `runs/<run_dir>/eval_sweep.jsonl` with win rates for each checkpoint.

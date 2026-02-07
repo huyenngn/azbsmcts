@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import math
 import random
 from collections import abc as cabc
 
 import numpy as np
 
 import openspiel
+from utils import utils
 
 # Type alias for opponent policy function: state -> action probabilities over full action space.
 OpponentPolicy = cabc.Callable[[openspiel.State], np.ndarray]
 
 logger = logging.getLogger(__name__)
+
+INITIAL_STATE_SERIALIZED = "\n"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,39 +34,40 @@ class ParticleDeterminizationSampler:
     self,
     game: openspiel.Game,
     ai_id: int,
-    num_particles: int = 120,
-    max_matching_opp_actions: int = 64,
-    rebuild_max_tries: int = 200,
+    max_num_particles: int = 150,
+    max_matches_per_particle: int = 100,
+    rebuild_tries: int = 50,
     seed: int = 0,
     opponent_policy: OpponentPolicy | None = None,
+    temperature: float = 1.0,
   ):
-    if num_particles <= 0:
-      raise ValueError("num_particles must be > 0")
-    if max_matching_opp_actions <= 0:
-      raise ValueError("max_matching_opp_actions must be > 0")
-    if rebuild_max_tries <= 0:
-      raise ValueError("rebuild_max_tries must be > 0")
+    if max_num_particles <= 0:
+      raise ValueError("max_num_particles must be > 0")
+    if max_matches_per_particle <= 0:
+      raise ValueError("max_matches_per_particle must be > 0")
+    if rebuild_tries <= 0:
+      raise ValueError("rebuild_tries must be > 0")
 
     self.game = game
     self.ai_id = ai_id
-    self.num_particles = num_particles
-    self.max_matching_opp_actions = max_matching_opp_actions
-    self.rebuild_max_tries = rebuild_max_tries
+    self.max_num_particles = max_num_particles
+    self.max_matches_per_particle = max_matches_per_particle
+    self.rebuild_tries = rebuild_tries
     self.rng = random.Random(seed)
     self.opponent_policy = opponent_policy
-
+    self.temperature = temperature
     self._history: list[_StepRecord] = []
-    self._particles: dict[str, None] = {}  # using dict as an ordered set
+    self._particles: list[str] = []
 
-  def get_particles(self, n: int) -> list[openspiel.State]:
-    """Return up to n particles from the current belief."""
-    particles: list[openspiel.State] = []
+  def sample_unique_particles(self, n: int) -> list[openspiel.State]:
+    """Return up to n unique particles as deserialized game states."""
     if not self._particles:
-      return particles
-    for i in range(min(n, len(self._particles))):
-      state = self.game.deserialize_state(list(self._particles)[i])
-      particles.append(state)
-    return particles
+      return []
+
+    return [
+      self.game.deserialize_state(p)
+      for p in self.rng.sample(self._particles, min(n, len(self._particles)))
+    ]
 
   def reset(self) -> None:
     """Clear history and particles for a new game."""
@@ -86,39 +89,27 @@ class ParticleDeterminizationSampler:
     )
     self._history.append(rec)
 
-    if not self._particles:
-      self._rebuild_particles()
-      return
+    self._rebuild_particles_if_needed(threshold=0)
 
     if rec.actor_is_ai:
-      self._update_for_ai_move(rec)
+      self._particles = self._resample_particles_for_ai(rec)
     else:
-      self._update_for_opponent_move(rec)
+      self._particles = self._resample_particles_for_opponent(rec.ai_obs_after)
 
-  def sample(self) -> openspiel.State:
-    """Sample a particle consistent with current observation history.
-
-    This function MUST NOT crash training. If belief collapses:
-    - attempt rebuild
-    - if still empty, fall back to a fresh initial state (uninformed determinization)
-    """
+  def sample(self) -> str:
+    """Sample a particle consistent with current observation history."""
     if not self._history:
-      return self.game.new_initial_state()
+      return INITIAL_STATE_SERIALIZED
 
-    if not self._particles:
-      self._rebuild_particles()
+    self._rebuild_particles_if_needed()
 
     if not self._particles:
       logger.warning(
         "Particle sampler belief collapsed with empty particles after rebuild; falling back to initial state."
       )
-      return self.game.new_initial_state()
+      return INITIAL_STATE_SERIALIZED
 
-    logger.debug(
-      "Particle sampler returning sample from %d particles.",
-      len(self._particles),
-    )
-    return self.game.deserialize_state(self.rng.choice(list(self._particles)))
+    return self.rng.choice(self._particles)
 
   def _ai_obs(self, state: openspiel.State) -> bytes:
     return np.asarray(
@@ -126,167 +117,154 @@ class ParticleDeterminizationSampler:
     ).tobytes()
 
   def _get_opponent_action_weights(
-    self, state: openspiel.State
+    self, state: openspiel.State, temperature: float = 1.0
   ) -> list[float]:
+    """Get action weights for opponent moves."""
     legal = state.legal_actions()
     if not legal:
       return []
-    uniform_probs = np.ones(len(legal), dtype=np.float32) / len(legal)
+
     if self.opponent_policy is None:
-      probs = uniform_probs
-    else:
-      policy_probs = self.opponent_policy(state)
-      legal_policy_probs = np.array(
-        [policy_probs[a] for a in legal], dtype=np.float32
-      )
-      legal_policy_probs = np.maximum(legal_policy_probs, 1e-12)
-      legal_policy_probs /= legal_policy_probs.sum()
+      return (np.ones(len(legal), dtype=np.float32) / len(legal)).tolist()
 
-      probs = 0.5 * legal_policy_probs + 0.5 * uniform_probs
+    policy_probs = self.opponent_policy(state)
+    probs = np.array([policy_probs[a] for a in legal], dtype=np.float32)
+    probs = np.maximum(probs, 1e-12)
 
-    return probs.tolist()
+    return utils.apply_temp(probs, temperature=temperature).tolist()
 
-  def _update_for_ai_move(self, rec: _StepRecord) -> None:
+  def _resample_particles_for_ai(
+    self, rec: _StepRecord, particles: list[str] | None = None
+  ) -> list[str]:
     assert rec.actor_is_ai and rec.ai_action is not None
-    updated: dict[str, None] = {}
-    for p in self._particles:
+    if particles is None:
+      particles = self._particles
+    updated: list[str] = []
+    for p in particles:
       s = self.game.deserialize_state(p)
       if rec.ai_action not in s.legal_actions():
         continue
       s.apply_action(rec.ai_action)
       if self._ai_obs(s) == rec.ai_obs_after:
-        updated[s.serialize()] = None
-    self._particles = updated
+        updated.append(s.serialize())
 
-  def _update_for_opponent_move(self, rec: _StepRecord) -> None:
-    assert not rec.actor_is_ai
-    candidates: list[tuple[str, float]] = []
-    for p in self._particles:
-      candidates.extend(self._matching_opponent_children(p, rec.ai_obs_after))
+    return updated
 
-    self._particles = self._resample_unique_candidates(candidates)
+  def _resample_particles_for_opponent(
+    self,
+    target_obs: bytes,
+    particles: list[str] | None = None,
+    matches_per_particle: int | None = None,
+    num_particles: int | None = None,
+    temperature: float = 1.0,
+  ) -> list[str]:
+    if particles is None:
+      particles = self._particles
+    if matches_per_particle is None:
+      matches_per_particle = self.game.num_distinct_actions()
+    if num_particles is None:
+      num_particles = self.max_num_particles
 
-  def _matching_opponent_children(
-    self, particle: str, target_obs: bytes
-  ) -> list[tuple[str, float]]:
-    """Generate up to K matching opponent-successor states for a single particle.
+    particle_weights: dict[str, float] = {}
+    for particle in particles:
+      s = self.game.deserialize_state(particle)
+      legal = s.legal_actions()
+      if not legal:
+        continue
 
-    Returns list of (child_state, weight).
-    Uses stochastic sampling from a mixture of policy and uniform to avoid collapse
-    when the policy is wrong.
-    """
-    s = self.game.deserialize_state(particle)
-    legal = s.legal_actions()
-    if not legal:
+      probs = self._get_opponent_action_weights(s, temperature=temperature)
+
+      untried_indices: set[int] = set(range(len(legal)))
+      match_count = 0
+
+      while len(untried_indices) > 0:
+        if match_count >= matches_per_particle:
+          break
+
+        untried = list(untried_indices)
+        w = [probs[i] for i in untried]
+        action_idx = self.rng.choices(untried, weights=w, k=1)[0]
+        untried_indices.remove(action_idx)
+
+        action = legal[action_idx]
+        s2 = self.game.deserialize_state(particle)
+        s2.apply_action(action)
+        if self._ai_obs(s2) != target_obs:
+          continue
+
+        weight = probs[action_idx]
+        particle_weights[s2.serialize()] = (
+          particle_weights.get(s2.serialize(), 0.0) + weight
+        )
+        match_count += 1
+
+    if not particle_weights:
       return []
 
-    probs = self._get_opponent_action_weights(s)
+    weights = utils.apply_temp(
+      np.array(list(particle_weights.values()), dtype=np.float32),
+      temperature=temperature,
+    )
 
-    matches: list[tuple[str, float]] = []
-    tried_actions: set[int] = set()
+    return self.rng.choices(
+      population=list(particle_weights.keys()),
+      weights=list(weights),
+      k=num_particles,
+    )
 
-    while len(tried_actions) < len(legal):
-      if len(matches) >= self.max_matching_opp_actions:
-        break
-
-      action_idx = self.rng.choices(range(len(legal)), weights=probs, k=1)[0]
-      action = legal[action_idx]
-
-      if action in tried_actions:
-        continue
-      tried_actions.add(action)
-
-      p3 = self.game.deserialize_state(particle)
-      p3.apply_action(action)
-      if self._ai_obs(p3) != target_obs:
-        continue
-
-      weight = probs[action_idx]
-      matches.append((p3.serialize(), weight))
-    return matches
-
-  def _resample_unique_candidates(
-    self, candidates: list[tuple[str, float]]
-  ) -> dict[str, None]:
-    """Deduplicate candidates by serialize key, aggregate weights, then resample to num_particles."""
-    if not candidates:
-      return {}
-
-    unique_weights: dict[str, float] = {}
-    for k, w in candidates:
-      if k in unique_weights:
-        w0 = unique_weights[k]
-        unique_weights[k] = w0 + float(w)
-      else:
-        unique_weights[k] = float(w)
-
-    if len(unique_weights) <= self.num_particles:
-      return dict.fromkeys(unique_weights)
-
-    # Weighted sampling without replacement using Efraimidis–Spirakis keys:
-    # For weight w, sample key u^(1/w). Larger key => higher chance.
-    scored: list[tuple[float, str]] = []
-    for k, w in unique_weights.items():
-      if not math.isfinite(w) or w <= 0.0:
-        w = 1e-12
-      u = self.rng.random()
-      u = max(u, 1e-12)
-      score = u ** (1.0 / w)
-      scored.append((score, k))
-
-    scored.sort(reverse=True, key=lambda x: x[0])
-    chosen = scored[: self.num_particles]
-    return {k: None for _, k in chosen}
+  def _rebuild_particles_if_needed(self, threshold: int | None = None) -> None:
+    if threshold is None:
+      threshold = int(self.max_num_particles * 0.2)
+    if len(self._particles) <= threshold:
+      self._rebuild_particles()
 
   def _rebuild_particles(self) -> None:
-    """Rebuild particles from scratch using the stored observation history."""
+    """Rebuild particles using the stored observation history."""
     if not self._history:
-      self._particles = {}
+      self._particles = []
       return
 
-    # Preserve current K and optionally escalate on later attempts.
-    base_k = self.max_matching_opp_actions
+    logger.debug(
+      f"Rebuilding particles with history of {len(self._history)} steps and {len(self._particles)} existing particles."
+    )
 
-    for attempt in range(self.rebuild_max_tries):
-      particles: dict[str, None] = {}
-      s0 = self.game.new_initial_state()
-      particles[s0.serialize()] = None
+    num_particles = int(self.max_num_particles * 0.7)
+    matches_per_particle = self.game.num_distinct_actions() // 2
+    temperature = self.temperature
 
-      # Mild excalation on later attempts to increase diversity if rebuild keeps failing.
-      self.max_matching_opp_actions = min(
-        base_k + attempt, self.game.num_distinct_actions()
+    for attempt in range(self.rebuild_tries):
+      logger.debug(
+        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} with max_num_particles={num_particles} "
+        f"max_matches_per_particle={matches_per_particle} and temperature={temperature:.2f}"
       )
+      particles: list[str] = [self.game.new_initial_state().serialize()]
+
+      # Mild escalation on later attempts to increase diversity if rebuild keeps failing.
+      num_particles = min(num_particles + 10, self.max_num_particles)
+      matches_per_particle = min(
+        matches_per_particle + 10,
+        self.game.num_distinct_actions(),
+        self.max_matches_per_particle,
+      )
+      temperature = min(temperature + 0.2, 2.0)
 
       ok = True
-      for i, rec in enumerate(self._history):
+      for rec in self._history:
         if not particles:
           ok = False
           break
 
         if rec.actor_is_ai:
-          updated: dict[str, None] = {}
-          assert rec.ai_action is not None
-          for p in particles:
-            p2 = self.game.deserialize_state(p)
-            if rec.ai_action not in p2.legal_actions():
-              continue
-            p2.apply_action(rec.ai_action)
-            if self._ai_obs(p2) == rec.ai_obs_after:
-              updated[p2.serialize()] = None
-          particles = updated
+          particles = self._resample_particles_for_ai(rec, particles)
         else:
-          candidates: list[tuple[str, float]] = []
-          for p in particles:
-            candidates.extend(
-              self._matching_opponent_children(p, rec.ai_obs_after)
-            )
-          particles = self._resample_unique_candidates(candidates)
+          particles = self._resample_particles_for_opponent(
+            rec.ai_obs_after,
+            particles,
+            matches_per_particle,
+            num_particles=num_particles,
+            temperature=temperature,
+          )
 
       if ok and particles:
-        self._particles = particles
-        self.max_matching_opp_actions = base_k
+        self._particles.extend(particles)
         return
-
-    # Rebuild failed.
-    self._particles = {}
-    self.max_matching_opp_actions = base_k
