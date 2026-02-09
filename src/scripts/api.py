@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import enum
+import json
 import logging
 import pathlib
 import random
@@ -21,6 +22,7 @@ from urllib import request
 import fastapi
 import pydantic
 import uvicorn
+from fastapi import responses
 
 import openspiel
 from scripts.common import agent_factory, config, seeding
@@ -77,15 +79,16 @@ class MakeMoveRequest(pydantic.BaseModel):
 
 
 class PreviousMoveInfo(pydantic.BaseModel):
-  player: PlayerColor = PlayerColor.Black
+  player: PlayerColor
   was_observational: bool = False
   was_pass: bool = False
   captured_stones: int = 0
 
 
 class GameStateResponse(pydantic.BaseModel):
+  current_player: PlayerColor
   observation: str = ""
-  previous_move_infos: list[PreviousMoveInfo] = []
+  previous_move_info: PreviousMoveInfo | None = None
   is_terminal: bool = False
   returns: list[float] = []
 
@@ -93,6 +96,13 @@ class GameStateResponse(pydantic.BaseModel):
 class ParticlesResponse(pydantic.BaseModel):
   observations: list[str] = []
   total: int = 0
+
+
+def _sse_event(event: str, data: dict[str, t.Any]) -> str:
+  payload = json.dumps(data, separators=(",", ":"))
+  sse = f"event: {event}\ndata: {payload}\n\n"
+  logger.debug(f"Sending SSE event: {event}")
+  return sse
 
 
 def _ensure_model(path: pathlib.Path) -> str:
@@ -111,12 +121,11 @@ def _ensure_model(path: pathlib.Path) -> str:
   return str(path)
 
 
-def _parse_move_info() -> PreviousMoveInfo | None:
+def _parse_move_info(player: PlayerColor) -> PreviousMoveInfo | None:
   """Parse last-move info from the observation string."""
   if app.state.state is None or app.state.state.is_terminal():
     return None
 
-  # OpenSpiel phantom_go observation includes a short "Previous move was ..." tail.
   obs_tail = app.state.state.observation_string(app.state.human_id)[-120:]
   m = re.search(
     r"Previous move was (valid|observational)"
@@ -127,6 +136,7 @@ def _parse_move_info() -> PreviousMoveInfo | None:
     return None
 
   return PreviousMoveInfo(
+    player=player,
     was_observational=(m.group(1) == "observational"),
     was_pass=(m.group(2) is not None),
     captured_stones=int(m.group(3)) if m.group(3) else 0,
@@ -162,7 +172,7 @@ def _build_agent(policy: str) -> None:
     search_cfg=settings.search_cfg,
     sampler_cfg=settings.sampler_cfg,
     base_seed=settings.seed,
-    run_id="api",  # constant namespace, not a session concept
+    run_id="api",
     purpose="api",
     device=settings.device,
     model_path=model_path,
@@ -173,10 +183,8 @@ def _build_agent(policy: str) -> None:
   app.state.particle = particle
 
 
-def _play_ai_turns() -> list[PreviousMoveInfo]:
-  """Execute all consecutive AI turns."""
-  infos: list[PreviousMoveInfo] = []
-
+def _play_ai_turns() -> t.Iterator[GameStateResponse]:
+  """Execute AI turns and yield incremental responses."""
   while (
     app.state.state is not None
     and not app.state.state.is_terminal()
@@ -189,21 +197,21 @@ def _play_ai_turns() -> list[PreviousMoveInfo]:
     logger.info("AI plays action %d", action)
     _apply_action(app.state.ai_id, action)
 
-    info = _parse_move_info()
-    if info:
-      info.player = PlayerColor(app.state.ai_id)
-      infos.append(info)
+    info = _parse_move_info(PlayerColor(app.state.ai_id))
 
-  return infos
+    yield _game_state_response(info)
 
 
-def _response(move_infos: list[PreviousMoveInfo]) -> GameStateResponse:
+def _game_state_response(
+  move_info: PreviousMoveInfo | None,
+) -> GameStateResponse:
   st = app.state.state
   return GameStateResponse(
+    current_player=PlayerColor(st.current_player()),
     observation=st.observation_string(app.state.human_id)
     if not st.is_terminal()
     else "",
-    previous_move_infos=move_infos,
+    previous_move_info=move_info,
     is_terminal=st.is_terminal(),
     returns=list(st.returns()),
   )
@@ -218,8 +226,45 @@ def root() -> dict[str, t.Any]:
   }
 
 
+def _step_stream(action: int) -> t.Iterator[str]:
+  try:
+    logger.info("Human plays action %d", action)
+    _apply_action(app.state.human_id, action)
+
+    info = _parse_move_info(PlayerColor(app.state.human_id))
+
+    yield _sse_event(
+      "update", _game_state_response(info).model_dump(mode="json")
+    )
+
+    for res in _play_ai_turns():
+      yield _sse_event("update", res.model_dump(mode="json"))
+
+    yield _sse_event(
+      "done", _game_state_response(None).model_dump(mode="json")
+    )
+  except Exception as exc:
+    logger.exception("Streaming step failed")
+    yield _sse_event(
+      "error",
+      {"detail": str(exc)},
+    )
+
+
+def _start_game_stream() -> t.Iterator[str]:
+  try:
+    for res in _play_ai_turns():
+      yield _sse_event("update", res.model_dump(mode="json"))
+  except Exception as exc:
+    logger.exception("Streaming start_game failed")
+    yield _sse_event(
+      "error",
+      {"detail": str(exc)},
+    )
+
+
 @app.post("/start")
-def start_game(request: StartGameRequest) -> GameStateResponse:
+def start_game(request: StartGameRequest) -> responses.StreamingResponse:
   if request.player_id not in (0, 1):
     raise fastapi.HTTPException(
       status_code=400, detail="player_id must be 0 or 1"
@@ -260,12 +305,14 @@ def start_game(request: StartGameRequest) -> GameStateResponse:
   )
 
   _build_agent(app.state.policy)
-  move_infos = _play_ai_turns()
-  return _response(move_infos)
+
+  return responses.StreamingResponse(
+    _start_game_stream(), media_type="text/event-stream"
+  )
 
 
 @app.post("/step")
-def step(request: MakeMoveRequest) -> GameStateResponse:
+def step(request: MakeMoveRequest) -> responses.StreamingResponse:
   st = app.state.state
   if st is None:
     raise fastapi.HTTPException(status_code=400, detail="No active game")
@@ -276,21 +323,9 @@ def step(request: MakeMoveRequest) -> GameStateResponse:
   if request.action not in st.legal_actions():
     raise fastapi.HTTPException(status_code=400, detail="Illegal action")
 
-  logger.info("Human plays action %d", request.action)
-  _apply_action(app.state.human_id, request.action)
-
-  infos: list[PreviousMoveInfo] = []
-  info = _parse_move_info()
-  if info:
-    info.player = PlayerColor(app.state.human_id)
-    infos.append(info)
-
-  infos.extend(_play_ai_turns())
-
-  if st.is_terminal():
-    logger.info("Game ended: returns=%s", st.returns())
-
-  return _response(infos)
+  return responses.StreamingResponse(
+    _step_stream(request.action), media_type="text/event-stream"
+  )
 
 
 @app.get("/particles")

@@ -1,29 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import axios from 'axios'
 import GoBoard from '@/components/GoBoard.vue'
 import { Button } from '@/components/ui/button'
 import {
-  PlayerColor,
-  type GameStateResponse,
   type MakeMoveRequest,
-  type PreviousMoveInfo,
   type StartGameRequest,
   type ParticlesResponse,
+  type GameStateResponse,
 } from '@/lib/types'
-import { ChevronLeft, RotateCw, Brain } from 'lucide-vue-next'
+import { ChevronLeft, RotateCw } from 'lucide-vue-next'
 import MoveInfoHistory from '@/components/MoveInfoHistory.vue'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerFooter,
-  DrawerTrigger,
-  DrawerClose,
-} from '@/components/ui/drawer'
-import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue'
-import DrawerHeader from '@/components/ui/drawer/DrawerHeader.vue'
-import DrawerTitle from '@/components/ui/drawer/DrawerTitle.vue'
-import DrawerDescription from '@/components/ui/drawer/DrawerDescription.vue'
+import ParticlesVisualizer from '@/components/ParticlesVisualizer.vue'
+import { getBackend, streamGameUpdates } from '@/lib/requests'
+import { formatMoveInfo, parseBoard } from '@/lib/game'
 
 const NUM_PARTICLES_TO_SHOW = 10
 
@@ -36,27 +25,25 @@ const board = ref<number[]>(Array(81).fill(-1))
 const isTerminal = ref<boolean>(false)
 const returns = ref<number[]>([0.0, 0.0])
 const isLoading = ref<boolean>(false)
+const isAiThinking = ref<boolean>(false)
 const moveHistory = ref<string[]>([])
-const particles = ref<string[]>([])
+const particles = ref<number[][]>([])
 const totalParticles = ref<number>(0)
 
-function parseBoard(observation: string): number[] {
-  const rows = observation.matchAll(/\d\s([+OX]+)/g)
-  const newBoard: number[] = []
-  for (const row of rows) {
-    newBoard.push(...Array.from(row[1]).map((cell) => (cell === '+' ? -1 : cell === 'O' ? 1 : 0)))
+function updateGameState(data: GameStateResponse) {
+  if (data.current_player !== props.playerId) {
+    isAiThinking.value = true
+  } else {
+    isAiThinking.value = false
   }
-  return newBoard
-}
-
-function formatMoveInfo(info: PreviousMoveInfo): string {
-  const player = info.player === PlayerColor.Black ? 'Black' : 'White'
-  if (info.was_pass) {
-    return `${player} passed.`
-  } else if (info.captured_stones > 0) {
-    return `${player} captured ${info.captured_stones} ${info.captured_stones > 1 ? 'stones' : 'stone'}.`
+  if (data.observation) {
+    board.value = parseBoard(data.observation)
   }
-  return `${player}'s move was ${info.was_observational ? 'observational' : 'valid'}.`
+  if (data.previous_move_info) {
+    moveHistory.value.push(formatMoveInfo(data.previous_move_info))
+  }
+  isTerminal.value = data.is_terminal
+  returns.value = data.returns
 }
 
 async function startGame() {
@@ -65,21 +52,42 @@ async function startGame() {
   moveHistory.value = []
 
   try {
-    const response = await axios.post<GameStateResponse>('/start', {
-      player_id: props.playerId,
-      policy: props.opponentAi,
-    } as StartGameRequest)
-
-    if (response.data.observation) {
-      board.value = parseBoard(response.data.observation)
-    }
-    for (const info of response.data.previous_move_infos) {
-      moveHistory.value.push(formatMoveInfo(info))
-    }
-    isTerminal.value = response.data.is_terminal
-    returns.value = response.data.returns
+    await streamGameUpdates(
+      '/start',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          player_id: props.playerId,
+          policy: props.opponentAi,
+        } as StartGameRequest),
+      },
+      {
+        onUpdate: (data) => {
+          if (data.current_player !== props.playerId) {
+            isAiThinking.value = true
+          } else {
+            isAiThinking.value = false
+          }
+          if (data.observation) {
+            board.value = parseBoard(data.observation)
+          }
+          if (data.previous_move_info) {
+            moveHistory.value.push(formatMoveInfo(data.previous_move_info))
+          }
+          isTerminal.value = data.is_terminal
+          returns.value = data.returns
+        },
+        onError: (data) => {
+          console.error('Streaming error:', data)
+        },
+      },
+    )
   } finally {
     isLoading.value = false
+    isAiThinking.value = false
   }
 }
 
@@ -88,32 +96,47 @@ async function handleMove(action: number) {
   isLoading.value = true
 
   try {
-    const response = await axios.post<GameStateResponse>('/step', {
-      action,
-    } as MakeMoveRequest)
-
-    if (response.data.observation) {
-      board.value = parseBoard(response.data.observation)
-    }
-    for (const info of response.data.previous_move_infos) {
-      moveHistory.value.push(formatMoveInfo(info))
-    }
-    isTerminal.value = response.data.is_terminal
-    returns.value = response.data.returns
+    await streamGameUpdates(
+      '/step',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+        } as MakeMoveRequest),
+      },
+      {
+        onUpdate: (data: GameStateResponse) => {
+          updateGameState(data)
+        },
+        onError: (data) => {
+          console.error('Streaming error:', data)
+        },
+      },
+    )
   } finally {
     isLoading.value = false
+    isAiThinking.value = false
   }
 }
 
 async function fetchParticles() {
   if (isLoading.value) return
   isLoading.value = true
+
   try {
-    const response = await axios.get<ParticlesResponse>(
+    const data = await getBackend<ParticlesResponse>(
       `/particles?num_particles=${NUM_PARTICLES_TO_SHOW}`,
     )
-    particles.value = response.data.observations
-    totalParticles.value = response.data.total
+
+    particles.value = []
+    for (const observation of data.observations) {
+      const particle = parseBoard(observation)
+      particles.value.push(particle)
+    }
+    totalParticles.value = data.total
   } catch (error) {
     console.error('Failed to fetch particles:', error)
     particles.value = []
@@ -141,7 +164,7 @@ onMounted(() => {
             : returns[props.playerId] < returns[1 - props.playerId]
               ? 'You lose!'
               : 'Draw'
-          : isLoading
+          : isAiThinking
             ? 'AI is thinking...'
             : 'Your turn'
       }}</span>
@@ -149,34 +172,12 @@ onMounted(() => {
         <Button variant="outline" size="icon" @click="startGame" :disabled="isLoading"
           ><RotateCw
         /></Button>
-        <Drawer>
-          <DrawerTrigger as-child>
-            <Button variant="outline" size="icon" @click="fetchParticles" :disabled="isLoading"
-              ><Brain
-            /></Button>
-          </DrawerTrigger>
-          <DrawerContent>
-            <div class="mx-auto w-full max-w-3xl">
-              <DrawerHeader>
-                <DrawerTitle>Particle Filter Visualization</DrawerTitle>
-                <DrawerDescription
-                  >This is a subset of the total {{ totalParticles }} particles sampled from the
-                  current belief state.</DrawerDescription
-                >
-              </DrawerHeader>
-              <ScrollArea class="h-96">
-                <div class="flex flex-wrap gap-10 justify-between">
-                  <GoBoard :board="parseBoard(p)" v-for="(p, index) in particles" :key="index" />
-                </div>
-              </ScrollArea>
-              <DrawerFooter>
-                <DrawerClose as-child>
-                  <Button variant="outline"> Close </Button>
-                </DrawerClose>
-              </DrawerFooter>
-            </div>
-          </DrawerContent>
-        </Drawer>
+        <ParticlesVisualizer
+          :totalParticles="totalParticles"
+          :particles="particles"
+          :disabled="isLoading"
+          @fetchParticles="fetchParticles"
+        />
       </div>
     </div>
     <div

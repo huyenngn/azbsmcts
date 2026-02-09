@@ -8,8 +8,9 @@ export type MakeMoveRequest = {
 }
 
 export type GameStateResponse = {
+  current_player: PlayerColor
   observation: string
-  previous_move_infos: PreviousMoveInfo[]
+  previous_move_info: PreviousMoveInfo
   is_terminal: boolean
   returns: number[]
 }

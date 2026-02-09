@@ -22,6 +22,7 @@ NUM_PARTICLES_INITIAL_FRACTION = 0.7
 MATCHES_PER_PARTICLE_INITIAL_FRACTION = 0.7
 NUM_PARTICLES_ESCALATION_FACTOR = 1.1
 MATCHES_PER_PARTICLE_ESCALATION_FACTOR = 1.1
+REBUILD_THRESHOLD_FRACTION = 0.2
 
 
 @dataclasses.dataclass(frozen=True)
@@ -64,6 +65,7 @@ class ParticleDeterminizationSampler:
     self.temperature = temperature
     self._history: list[_StepRecord] = []
     self._particles: list[str] = []
+    self._last_valid_sample: str = INITIAL_STATE_SERIALIZED
 
   def sample_unique_particles(self, n: int) -> list[openspiel.State]:
     """Return up to n unique particles as deserialized game states."""
@@ -79,6 +81,7 @@ class ParticleDeterminizationSampler:
     """Clear history and particles for a new game."""
     self._history.clear()
     self._particles.clear()
+    self._last_valid_sample = INITIAL_STATE_SERIALIZED
 
   def step(
     self, actor: int, action: int, real_state_after: openspiel.State
@@ -111,11 +114,12 @@ class ParticleDeterminizationSampler:
 
     if not self._particles:
       logger.warning(
-        "Particle sampler belief collapsed with empty particles after rebuild; falling back to initial state."
+        "Particle sampler belief collapsed with empty particles after rebuild; falling back to last valid sample."
       )
-      return INITIAL_STATE_SERIALIZED
+      return self._last_valid_sample
 
-    return self.rng.choice(self._particles)
+    self._last_valid_sample = self.rng.choice(self._particles)
+    return self._last_valid_sample
 
   def _ai_obs(self, state: openspiel.State) -> bytes:
     return np.asarray(
@@ -220,7 +224,7 @@ class ParticleDeterminizationSampler:
 
   def _rebuild_particles_if_needed(self, threshold: int | None = None) -> None:
     if threshold is None:
-      threshold = int(self.max_num_particles * 0.2)
+      threshold = int(self.max_num_particles * REBUILD_THRESHOLD_FRACTION)
     if len(self._particles) <= threshold:
       self._rebuild_particles()
 
