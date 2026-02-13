@@ -41,7 +41,7 @@ class ParticleDeterminizationSampler:
     max_num_particles: int = 150,
     max_matches_per_particle: int = 100,
     checkpoint_interval: int = 5,
-    rebuild_tries: int = 10,
+    rebuild_tries: int = 5,
     seed: int = 0,
     opponent_policy: OpponentPolicy | None = None,
     temperature: float = 1.0,
@@ -119,20 +119,36 @@ class ParticleDeterminizationSampler:
 
   def sample(self) -> str:
     """Sample a particle consistent with current observation history."""
+    gamma, _ = self.sample_with_prior()
+    return gamma
+
+  def sample_with_prior(self) -> tuple[str, float]:
+    """Sample a particle and return ``(serialized_state, P(γ))``.
+
+    ``P(γ)`` is the particle's frequency in the pool, representing the
+    opponent-model–based prior.  When no opponent policy is provided,
+    all surviving particles are equally likely so ``P(γ) ≈ 1/unique``.
+    """
     if not self._history:
-      return INITIAL_STATE_SERIALIZED
+      return INITIAL_STATE_SERIALIZED, 1.0
 
     if not self._particles:
       self._rebuild_particles()
 
     if not self._particles:
       logger.warning(
-        "Particle sampler belief collapsed with empty particles after rebuild; falling back to last valid sample."
+        "Particle sampler belief collapsed with empty particles after "
+        "rebuild; falling back to last valid sample."
       )
-      return self._last_valid_sample
+      return self._last_valid_sample, 1.0
 
-    self._last_valid_sample = self.rng.choice(self._particles)
-    return self._last_valid_sample
+    chosen = self.rng.choice(self._particles)
+    self._last_valid_sample = chosen
+
+    # Prior = frequency of this particle in the pool
+    count = self._particles.count(chosen)
+    prior = count / len(self._particles)
+    return chosen, prior
 
   def _ai_obs(self, state: openspiel.State) -> bytes:
     return np.asarray(
@@ -324,9 +340,13 @@ class ParticleDeterminizationSampler:
 
     sorted_checkpoint_indices = list(self._checkpoint_indices)
     sorted_checkpoint_indices.sort()
-    logger.debug(f"checkpoint indices: {sorted_checkpoint_indices}")
+    checkpoint_step = 1 + len(sorted_checkpoint_indices) // self.rebuild_tries
+    logger.debug(
+      f"checkpoint indices: {sorted_checkpoint_indices}. checkpoint step size: {checkpoint_step}"
+    )
+
     for attempt in range(self.rebuild_tries):
-      if (tmp := (1 + attempt)) <= len(
+      if (tmp := (1 + attempt * checkpoint_step)) <= len(
         sorted_checkpoint_indices
       ) and attempt < self.rebuild_tries - 1:
         start_idx = sorted_checkpoint_indices[-tmp]
@@ -336,7 +356,7 @@ class ParticleDeterminizationSampler:
         start_idx = 0
 
       logger.debug(
-        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} starting from index {start_idx} with {len(particles)} particles."
+        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} starting from index {start_idx} with {self._history[start_idx].particle_diversity:.2%} diversity."
       )
       history_scale = (
         1.0 + (len(self._history) - start_idx) / self.game.max_game_length()
@@ -381,7 +401,7 @@ class ParticleDeterminizationSampler:
             temperature=temperature,
           )
 
-        if (idx != 0) and (idx % self.checkpoint_interval == 0):
+        if idx in self._checkpoint_indices:
           diversity = self._get_particle_diversity(particles)
           if rec.particle_diversity < diversity:
             logger.debug(
@@ -389,13 +409,10 @@ class ParticleDeterminizationSampler:
             )
             rec.particle_diversity = diversity
             rec.checkpoint_particles = particles
-            self._checkpoint_indices.add(idx)
 
       if ok and particles:
         if attempt > 0:
           checkpoint_idx = len(self._history) - 1
-          if checkpoint_idx in self._checkpoint_indices:
-            self._checkpoint_indices.remove(checkpoint_idx)
           self._checkpoint_indices.add(checkpoint_idx)
           rec = self._history[checkpoint_idx]
           rec.checkpoint_particles = particles

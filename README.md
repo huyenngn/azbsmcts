@@ -1,15 +1,15 @@
-# azbsmcts
+# azmcts
 
-![License: Apache 2.0](https://img.shields.io/github/license/huyenngn/azbsmcts)
+![License: Apache 2.0](https://img.shields.io/github/license/huyenngn/azmcts)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
-![CI](https://github.com/huyenngn/azbsmcts/actions/workflows/ci.yml/badge.svg?branch=main)
-![Smoke](https://github.com/huyenngn/azbsmcts/actions/workflows/smoke.yml/badge.svg?branch=main)
-![Test](https://github.com/huyenngn/azbsmcts/actions/workflows/test.yml/badge.svg?branch=main)
-![Demo model downloads](https://img.shields.io/github/downloads/huyenngn/azbsmcts/demo-model/model.pt?label=demo%20model%20downloads)
+![CI](https://github.com/huyenngn/azmcts/actions/workflows/ci.yml/badge.svg?branch=main)
+![Smoke](https://github.com/huyenngn/azmcts/actions/workflows/smoke.yml/badge.svg?branch=main)
+![Test](https://github.com/huyenngn/azmcts/actions/workflows/test.yml/badge.svg?branch=main)
+![Demo model downloads](https://img.shields.io/github/downloads/huyenngn/azmcts/demo-model/model.pt?label=demo%20model%20downloads)
 
 AlphaZero-inspired AI agent for **Phantom Go** (imperfect-information Go), developed as part of a research thesis.
 
-The core contribution of this project is **AZ-BS-MCTS**: an AlphaZero-guided Belief-State Monte Carlo Tree Search algorithm that operates under strict partial-information constraints.
+The core contribution of this project is **AZ-MCTS**: an AlphaZero-guided Belief-State Monte Carlo Tree Search algorithm that operates under strict partial-information constraints.
 
 For game simulation and environment handling, this project builds upon [OpenSpiel](https://github.com/google-deepmind/open_spiel).
 
@@ -35,8 +35,8 @@ This codebase intentionally enforces the following rules:
 Use [uv](https://docs.astral.sh/uv/) to set up a local development environment.
 
 ```sh
-git clone https://github.com/huyenngn/azbsmcts.git
-cd azbsmcts
+git clone https://github.com/huyenngn/azmcts.git
+cd azmcts
 uv sync
 ```
 

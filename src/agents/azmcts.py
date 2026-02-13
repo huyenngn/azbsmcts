@@ -15,8 +15,8 @@ if t.TYPE_CHECKING:
   import openspiel
 
 
-class AZBSMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
-  """AlphaZero-guided Belief-State MCTS agent.
+class AZMCTSAgent(base.BaseAgent, base.PolicyTargetMixin):
+  """AlphaZero-guided MCTS agent.
 
   Uses neural network priors and values with PUCT selection.
   All observations use explicit player IDs to prevent information leakage.

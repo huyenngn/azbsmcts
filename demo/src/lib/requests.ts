@@ -68,3 +68,19 @@ export async function getBackend<T>(url: string): Promise<T> {
 
   return response.json() as Promise<T>
 }
+
+export async function postBackend<T>(url: string, body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  if (!response.ok) {
+    throw new Error(response.statusText)
+  }
+
+  return response.json() as Promise<T>
+}

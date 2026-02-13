@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 license = { text = "Apache-2.0" }
-name = "azbsmcts"
+name = "azmcts"
 version = "0.1.0"
 description = "AlphaZero inspired AI for Phantom Go"
 readme = "README.md"

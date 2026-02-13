@@ -53,7 +53,7 @@ jobs:
           uv run eval-match \
             --model "$RUN_DIR/model.pt" \
             --rebuild-tries 2 \
-            --a azbsmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 \
+            --a azmcts --b bsmcts --n 3 --T 2 --S 2 --seed 0 \
             --out-json "$RUN_DIR/eval_match.json"
 
       - name: Smoke plot

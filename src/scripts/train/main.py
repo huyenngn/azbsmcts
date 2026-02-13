@@ -43,7 +43,7 @@ def self_play_one_game(
   state = game.new_initial_state()
 
   a0, p0 = agent_factory.make_agent(
-    kind="azbsmcts",
+    kind="azmcts",
     player_id=0,
     game=game,
     search_cfg=search_cfg,
@@ -57,7 +57,7 @@ def self_play_one_game(
     game_idx=game_idx,
   )
   a1, p1 = agent_factory.make_agent(
-    kind="azbsmcts",
+    kind="azmcts",
     player_id=1,
     game=game,
     search_cfg=search_cfg,
@@ -74,10 +74,10 @@ def self_play_one_game(
   if (
     p0 is None
     or p1 is None
-    or not isinstance(a0, agents.AZBSMCTSAgent)
-    or not isinstance(a1, agents.AZBSMCTSAgent)
+    or not isinstance(a0, agents.AZMCTSAgent)
+    or not isinstance(a1, agents.AZMCTSAgent)
   ):
-    raise ValueError("AZ-BSMCTS agents required for self-play")
+    raise ValueError("AZMCTS agents required for self-play")
 
   traj: list[tuple[np.ndarray, np.ndarray, int]] = []
 
@@ -313,7 +313,7 @@ def main() -> None:
 
   p.add_argument("--max-num-particles", type=int, default=150)
   p.add_argument("--max-matches-per-particle", type=int, default=100)
-  p.add_argument("--rebuild-tries", type=int, default=10)
+  p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
 

@@ -186,7 +186,7 @@ def main() -> None:
   p.add_argument("--dirichlet-alpha", type=float, default=0.0)
   p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
-  p.add_argument("--a", type=str, default="azbsmcts")
+  p.add_argument("--a", type=str, default="azmcts")
   p.add_argument("--b", type=str, default="bsmcts")
   p.add_argument("--flip-colors", action="store_true")
 
@@ -195,7 +195,7 @@ def main() -> None:
 
   p.add_argument("--max-num-particles", type=int, default=150)
   p.add_argument("--max-matches-per-particle", type=int, default=100)
-  p.add_argument("--rebuild-tries", type=int, default=10)
+  p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
 

@@ -33,8 +33,8 @@ def sampler(game: openspiel.Game) -> samplers.ParticleDeterminizationSampler:
   )
 
 
-class TestAZBSMCTSAgent:
-  """Tests for AZBSMCTSAgent class."""
+class TestAZMCTSAgent:
+  """Tests for AZMCTSAgent class."""
 
   def test_init(
     self,
@@ -43,7 +43,7 @@ class TestAZBSMCTSAgent:
     sampler: samplers.ParticleDeterminizationSampler,
   ) -> None:
     """Test agent initialization."""
-    agent = agents.AZBSMCTSAgent(
+    agent = agents.AZMCTSAgent(
       game=game,
       player_id=0,
       obs_size=game.observation_tensor_size(),
@@ -66,7 +66,7 @@ class TestAZBSMCTSAgent:
     sampler: samplers.ParticleDeterminizationSampler,
   ) -> None:
     """Test that select_action returns a legal action."""
-    agent = agents.AZBSMCTSAgent(
+    agent = agents.AZMCTSAgent(
       game=game,
       player_id=0,
       obs_size=game.observation_tensor_size(),
@@ -88,7 +88,7 @@ class TestAZBSMCTSAgent:
     sampler: samplers.ParticleDeterminizationSampler,
   ) -> None:
     """Test that select_action_with_pi returns action and policy vector."""
-    agent = agents.AZBSMCTSAgent(
+    agent = agents.AZMCTSAgent(
       game=game,
       player_id=0,
       obs_size=game.observation_tensor_size(),
@@ -114,11 +114,11 @@ class TestAZBSMCTSAgent:
   ) -> None:
     """Test that same seed produces same action sequence."""
 
-    def make_agent() -> agents.AZBSMCTSAgent:
+    def make_agent() -> agents.AZMCTSAgent:
       samp = samplers.ParticleDeterminizationSampler(
         game=game, ai_id=0, max_num_particles=8, seed=123
       )
-      return agents.AZBSMCTSAgent(
+      return agents.AZMCTSAgent(
         game=game,
         player_id=0,
         obs_size=game.observation_tensor_size(),
@@ -148,7 +148,7 @@ class TestAZBSMCTSAgent:
   ) -> None:
     """Test that Dirichlet noise affects policy in training mode."""
     # Agent with Dirichlet noise
-    agent_noisy = agents.AZBSMCTSAgent(
+    agent_noisy = agents.AZMCTSAgent(
       game=game,
       player_id=0,
       obs_size=game.observation_tensor_size(),
@@ -170,7 +170,7 @@ class TestAZBSMCTSAgent:
     sampler2 = samplers.ParticleDeterminizationSampler(
       game=game, ai_id=0, max_num_particles=8, seed=42
     )
-    agent_no_noise = agents.AZBSMCTSAgent(
+    agent_no_noise = agents.AZMCTSAgent(
       game=game,
       player_id=0,
       obs_size=game.observation_tensor_size(),
