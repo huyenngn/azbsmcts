@@ -16,6 +16,8 @@ class TestGammaActionStats:
     s = tree.GammaActionStats()
     assert s.n == 0
     assert s.u == 0.0
+    assert s.w == 0.0
+    assert s.p == 0.0
 
   def test_running_average_update(self) -> None:
     """Simulate Eq 2: U(γ,a) ← U(γ,a) + (R − U(γ,a)) / N(γ,a)."""
@@ -26,6 +28,18 @@ class TestGammaActionStats:
       s.u += (r - s.u) / s.n
     assert s.n == 3
     assert s.u == pytest.approx(0.5, abs=1e-9)
+
+  def test_q_property_zero_visits(self) -> None:
+    s = tree.GammaActionStats(n=0, w=10.0)
+    assert s.q == 0.0
+
+  def test_q_property_with_visits(self) -> None:
+    s = tree.GammaActionStats(n=5, w=10.0)
+    assert s.q == 2.0
+
+  def test_q_property_negative(self) -> None:
+    s = tree.GammaActionStats(n=4, w=-8.0)
+    assert s.q == -2.0
 
 
 # ---------------------------------------------------------------------------
@@ -64,33 +78,6 @@ class TestGammaStats:
 
 
 # ---------------------------------------------------------------------------
-# EdgeStats (AZMCTS compat)
-# ---------------------------------------------------------------------------
-
-
-class TestEdgeStats:
-  """Test EdgeStats dataclass (kept for AZMCTS)."""
-
-  def test_default_values(self) -> None:
-    edge = tree.EdgeStats()
-    assert edge.n == 0
-    assert edge.w == 0.0
-    assert edge.p == 0.0
-
-  def test_q_property_zero_visits(self) -> None:
-    edge = tree.EdgeStats(n=0, w=10.0)
-    assert edge.q == 0.0
-
-  def test_q_property_with_visits(self) -> None:
-    edge = tree.EdgeStats(n=5, w=10.0)
-    assert edge.q == 2.0
-
-  def test_negative_values(self) -> None:
-    edge = tree.EdgeStats(n=4, w=-8.0)
-    assert edge.q == -2.0
-
-
-# ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
 
@@ -103,9 +90,7 @@ class TestNode:
     assert node.obs_key == "test_obs"
     assert node.player_to_act == 0
     assert node.is_expanded is False
-    assert len(node.edges) == 0
     assert len(node.gammas) == 0
-    assert node.n == 0
 
   # -- per-γ helpers --------------------------------------------------------
 
@@ -164,7 +149,6 @@ class TestNode:
     gs2 = node.get_or_create_gamma("g2")
     gs2.actions[0] = tree.GammaActionStats(n=2, u=0.0)
     # With λ=0 (force uniform): U(B,0) = 0.5*1.0 + 0.5*0.0 = 0.5
-    # λ=0 → all logits=0 → uniform
     u = node.belief_weighted_u(0, lambda_guess=0.0)
     assert u == pytest.approx(0.5)
 
@@ -185,6 +169,47 @@ class TestNode:
     node.get_or_create_gamma("g2").n = 7
     assert node.total_visits() == 17
 
+  # -- aggregate Q and prior (for PUCT) ------------------------------------
+
+  def test_aggregate_q_no_data(self) -> None:
+    node = tree.Node(obs_key="x", player_to_act=0)
+    assert node.aggregate_q(0) == 0.0
+
+  def test_aggregate_q(self) -> None:
+    node = tree.Node(obs_key="x", player_to_act=0)
+    gs1 = node.get_or_create_gamma("g1")
+    gs1.actions[0] = tree.GammaActionStats(n=2, w=4.0)
+    gs2 = node.get_or_create_gamma("g2")
+    gs2.actions[0] = tree.GammaActionStats(n=3, w=6.0)
+    # Q = (4+6) / (2+3) = 2.0
+    assert node.aggregate_q(0) == pytest.approx(2.0)
+
+  def test_aggregate_prior_no_data(self) -> None:
+    node = tree.Node(obs_key="x", player_to_act=0)
+    assert node.aggregate_prior(0) == 0.0
+
+  def test_aggregate_prior_weighted(self) -> None:
+    node = tree.Node(obs_key="x", player_to_act=0)
+    gs1 = node.get_or_create_gamma("g1")
+    gs1.n = 3
+    gs1.actions[0] = tree.GammaActionStats(p=0.8)
+    gs2 = node.get_or_create_gamma("g2")
+    gs2.n = 1
+    gs2.actions[0] = tree.GammaActionStats(p=0.4)
+    # P(a) = (3*0.8 + 1*0.4) / (3+1) = 2.8/4 = 0.7
+    assert node.aggregate_prior(0) == pytest.approx(0.7)
+
+  def test_aggregate_prior_no_visits_simple_average(self) -> None:
+    """When all N(γ)=0, falls back to simple average of priors."""
+    node = tree.Node(obs_key="x", player_to_act=0)
+    gs1 = node.get_or_create_gamma("g1")
+    gs1.n = 0
+    gs1.actions[0] = tree.GammaActionStats(p=0.6)
+    gs2 = node.get_or_create_gamma("g2")
+    gs2.n = 0
+    gs2.actions[0] = tree.GammaActionStats(p=0.4)
+    assert node.aggregate_prior(0) == pytest.approx(0.5)
+
   # -- UCT value (Eq 1) ----------------------------------------------------
 
   def test_uct_value_explores_unvisited(self) -> None:
@@ -198,6 +223,33 @@ class TestNode:
     v0 = node.uct_value(0, c_uct=1.4)
     v1 = node.uct_value(1, c_uct=1.4)
     assert v1 > v0  # Unvisited action should be preferred
+
+  # -- PUCT value -----------------------------------------------------------
+
+  def test_puct_value_prefers_high_prior(self) -> None:
+    """PUCT should prefer action with higher NN prior when both unvisited."""
+    node = tree.Node(obs_key="x", player_to_act=0)
+    gs = node.get_or_create_gamma("g1")
+    gs.n = 5
+    gs.actions[0] = tree.GammaActionStats(n=0, w=0.0, p=0.1)
+    gs.actions[1] = tree.GammaActionStats(n=0, w=0.0, p=0.9)
+
+    v0 = node.puct_value(0, c_puct=1.5)
+    v1 = node.puct_value(1, c_puct=1.5)
+    assert v1 > v0
+
+  def test_puct_value_balances_q_and_exploration(self) -> None:
+    """High Q but many visits vs low Q but fewer visits."""
+    node = tree.Node(obs_key="x", player_to_act=0)
+    gs = node.get_or_create_gamma("g1")
+    gs.n = 20
+    gs.actions[0] = tree.GammaActionStats(n=15, w=12.0, p=0.5)
+    gs.actions[1] = tree.GammaActionStats(n=2, w=1.0, p=0.5)
+
+    v0 = node.puct_value(0, c_puct=1.5)
+    v1 = node.puct_value(1, c_puct=1.5)
+    # Action 1 has fewer visits → higher exploration bonus
+    assert v1 > v0
 
   # -- Opponent Predicting (Eq 6) ------------------------------------------
 
@@ -215,28 +267,40 @@ class TestNode:
     node = tree.Node(obs_key="x", player_to_act=1)
     assert node.opponent_action_probs([]) == []
 
-  # -- legacy get_most_visited_action (AZMCTS compat) --------------------
+  # -- get_most_visited_action (per-γ stats) --------------------------------
 
   def test_get_most_visited_action_basic(self) -> None:
     node = tree.Node(obs_key="test", player_to_act=0)
-    node.edges[0] = tree.EdgeStats(n=5)
-    node.edges[1] = tree.EdgeStats(n=10)
-    node.edges[2] = tree.EdgeStats(n=3)
+    node.legal_actions = [0, 1, 2]
+    gs = node.get_or_create_gamma("g1")
+    gs.actions[0] = tree.GammaActionStats(n=5)
+    gs.actions[1] = tree.GammaActionStats(n=10)
+    gs.actions[2] = tree.GammaActionStats(n=3)
     assert node.get_most_visited_action() == 1
 
   def test_get_most_visited_action_filtered(self) -> None:
     node = tree.Node(obs_key="test", player_to_act=0)
-    node.edges[0] = tree.EdgeStats(n=5)
-    node.edges[1] = tree.EdgeStats(n=10)
-    node.edges[2] = tree.EdgeStats(n=3)
+    node.legal_actions = [0, 1, 2]
+    gs = node.get_or_create_gamma("g1")
+    gs.actions[0] = tree.GammaActionStats(n=5)
+    gs.actions[1] = tree.GammaActionStats(n=10)
+    gs.actions[2] = tree.GammaActionStats(n=3)
     assert node.get_most_visited_action(actions=[0, 2]) == 0
 
-  def test_get_most_visited_action_missing_key(self) -> None:
+  def test_get_most_visited_action_aggregates_gammas(self) -> None:
+    """Visits from multiple γ should be summed."""
     node = tree.Node(obs_key="test", player_to_act=0)
-    node.edges[1] = tree.EdgeStats(n=10)
-    assert node.get_most_visited_action(actions=[0, 1, 2]) == 1
+    node.legal_actions = [0, 1]
+    gs1 = node.get_or_create_gamma("g1")
+    gs1.actions[0] = tree.GammaActionStats(n=3)
+    gs1.actions[1] = tree.GammaActionStats(n=5)
+    gs2 = node.get_or_create_gamma("g2")
+    gs2.actions[0] = tree.GammaActionStats(n=4)
+    gs2.actions[1] = tree.GammaActionStats(n=1)
+    # action 0: 3+4=7,  action 1: 5+1=6
+    assert node.get_most_visited_action() == 0
 
-  def test_get_most_visited_action_empty_edges(self) -> None:
+  def test_get_most_visited_action_empty(self) -> None:
     node = tree.Node(obs_key="test", player_to_act=0)
     with pytest.raises(ValueError):
       node.get_most_visited_action()
@@ -263,10 +327,10 @@ class TestBeliefTree:
   def test_get_or_create_existing_node(self) -> None:
     bt = tree.BeliefTree()
     n1 = bt.get_or_create("obs1", player_to_act=0)
-    n1.n = 5
+    n1.gammas["g"] = tree.GammaStats(n=5)
     n2 = bt.get_or_create("obs1", player_to_act=0)
     assert n2 is n1
-    assert n2.n == 5
+    assert n2.gammas["g"].n == 5
 
   def test_multiple_nodes(self) -> None:
     bt = tree.BeliefTree()

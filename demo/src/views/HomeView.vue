@@ -12,13 +12,13 @@ import {
 import { PlayerColor } from '@/lib/types'
 
 const playerId = ref(PlayerColor.Black)
-const opponentAi = ref('azmcts')
+const opponentAi = ref('azbsmcts')
 </script>
 
 <template>
   <main class="grow flex items-center justify-center">
     <div class="flex flex-col items-center gap-4">
-      <h1 class="font-black">azmcts</h1>
+      <h1 class="font-black">azbsmcts</h1>
       <table class="table-auto [&_td]:p-2">
         <tbody>
           <tr>
@@ -48,7 +48,7 @@ const opponentAi = ref('azmcts')
                   <SelectGroup>
                     <SelectItem value="random"> Randomizer </SelectItem>
                     <SelectItem value="bsmcts"> BSMCTS </SelectItem>
-                    <SelectItem value="azmcts"> AZMCTS </SelectItem>
+                    <SelectItem value="azbsmcts"> AZBSMCTS </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>

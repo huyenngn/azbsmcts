@@ -18,13 +18,13 @@ from __future__ import annotations
 import typing as t
 
 import agents
-from belief import samplers, tree
 
 if t.TYPE_CHECKING:
   import openspiel
+  from belief import samplers, tree
 
 
-class BSMCTSAgent(agents.BaseAgent):
+class BSMCTSAgent(agents.MCTSAgent):
   """Belief-State Monte Carlo Tree Search agent  (Algorithm 1).
 
   Parameters
@@ -63,15 +63,18 @@ class BSMCTSAgent(agents.BaseAgent):
     lambda_predict: float = 1.0,
     length_discount: float = 0.999,
   ):
-    super().__init__(game=game, player_id=player_id, seed=seed)
-    self.belief_tree = tree.BeliefTree()
-    self.sampler = sampler
-    self.c_uct = float(c_uct)
-    self.T = int(T)
-    self.S = int(S)
-    self.lambda_guess = float(lambda_guess)
-    self.lambda_predict = float(lambda_predict)
-    self.length_discount = float(length_discount)
+    super().__init__(
+      game=game,
+      player_id=player_id,
+      sampler=sampler,
+      c_uct=c_uct,
+      T=T,
+      S=S,
+      seed=seed,
+      lambda_guess=lambda_guess,
+      lambda_predict=lambda_predict,
+      length_discount=length_discount,
+    )
 
   # ── public API (Algorithm 1, lines 1-13) ─────────────────────────────────
 
@@ -94,7 +97,7 @@ class BSMCTSAgent(agents.BaseAgent):
         return argmax_a U(B_root, a)
     """
     root_obs = self.obs_key(state, self.player_id)
-    root = self.belief_tree.get_or_create(root_obs, state.current_player())
+    root = self.tree.get_or_create(root_obs, state.current_player())
 
     for _ in range(self.T):
       # -- Sampling stage (Alg 1, line 4) -----------------------------------
@@ -111,7 +114,7 @@ class BSMCTSAgent(agents.BaseAgent):
 
     # -- Return best action (Alg 1, line 13) --------------------------------
     # argmax_a U(B_root, a)  over legal actions
-    legal = list(state.legal_actions())
+    legal = state.legal_actions()
     return max(
       legal,
       key=lambda a: root.belief_weighted_u(a, self.lambda_guess),
@@ -142,14 +145,12 @@ class BSMCTSAgent(agents.BaseAgent):
     if gamma_state.is_terminal():
       return self._terminal_value(gamma_state)
 
+    gs = node.get_or_create_gamma(gamma_key)
+
     # "if N(B) = 0" – first time ANY γ visits this node → simulate
     if node.total_visits() == 0:
-      # Ensure γ is registered in this node
-      gs = node.get_or_create_gamma(gamma_key)
       gs.n += 1
       return self._rollout(gamma_state.clone())
-
-    gs = node.get_or_create_gamma(gamma_key)
 
     # "if γ has no children" – first time THIS γ visits this node → expand
     if not gs.actions:
@@ -158,7 +159,7 @@ class BSMCTSAgent(agents.BaseAgent):
     gs.n += 1
 
     # -- Selection (Alg 1, line 39) -----------------------------------------
-    action = self._selection(gamma_key, gamma_state, node)
+    action = self._selection(gamma_state, node)
     if action is None:
       # No legal action found – fall back to rollout
       return self._rollout(gamma_state.clone())
@@ -166,12 +167,10 @@ class BSMCTSAgent(agents.BaseAgent):
     # Descend: γ·a  and  B·a
     gamma_state.apply_action(action)
     child_obs = self.obs_key(gamma_state, self.player_id)
-    child_node = self.belief_tree.get_or_create(
+    child_node = self.tree.get_or_create(
       child_obs, gamma_state.current_player()
     )
     child_gamma_key = gamma_state.serialize()
-
-    # Register γ·a in B·a
     child_node.get_or_create_gamma(child_gamma_key)
 
     # Recurse (Alg 1, line 40)
@@ -217,7 +216,6 @@ class BSMCTSAgent(agents.BaseAgent):
 
   def _selection(
     self,
-    gamma_key: str,
     gamma_state: openspiel.State,
     node: tree.Node,
   ) -> int | None:
@@ -260,6 +258,8 @@ class BSMCTSAgent(agents.BaseAgent):
 
   def _terminal_value(self, state: openspiel.State) -> float:
     """Return from terminal state with length discount."""
-    return float(state.returns()[self.player_id]) * (
-      self.length_discount ** state.game_length()
-    )
+    if self.game.name == "phantom_go":
+      return float(state.returns()[self.player_id]) * (
+        self.length_discount ** state.game_length()
+      )
+    return float(state.returns()[self.player_id])

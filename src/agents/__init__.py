@@ -1,12 +1,12 @@
 # pylint: disable=C5101
-from agents.azmcts import AZMCTSAgent
-from agents.base import Agent, BaseAgent, PolicyTargetMixin
+from agents.azbsmcts import AZBSMCTSAgent
+from agents.base import Agent, MCTSAgent, PolicyTargetMixin
 from agents.bsmcts import BSMCTSAgent
 
 __all__ = [
   "Agent",
-  "BaseAgent",
+  "MCTSAgent",
   "PolicyTargetMixin",
-  "AZMCTSAgent",
+  "AZBSMCTSAgent",
   "BSMCTSAgent",
 ]

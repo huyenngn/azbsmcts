@@ -11,7 +11,7 @@ from scripts.common import config, io, seeding
 from scripts.eval import match
 
 
-def az_winrate(res: dict, az_label: str = "azbsmcts") -> float:
+def az_winrate(res: dict, az_label: str = "azmcts") -> float:
   items = list(res.items())
   r1 = items[0][1]
   r2 = items[1][1]
@@ -26,7 +26,7 @@ def az_winrate(res: dict, az_label: str = "azbsmcts") -> float:
 
 
 def extract_az_game_lengths(
-  res: dict, az_label: str = "azbsmcts"
+  res: dict, az_label: str = "azmcts"
 ) -> tuple[list[int], list[int], list[int]]:
   """Extract win/loss/draw game lengths from AZ perspective.
 
@@ -178,7 +178,7 @@ def main() -> None:
     # Evaluate vs BS-MCTS
     res_b = match.run_match(
       game=game,
-      a="azbsmcts",
+      a="azmcts",
       b="bsmcts",
       n=args.n,
       search_cfg=search_cfg,
@@ -197,7 +197,7 @@ def main() -> None:
     )
     res_r = match.run_match(
       game=game,
-      a="azbsmcts",
+      a="azmcts",
       b="random",
       n=args.n,
       search_cfg=search_cfg,

@@ -83,7 +83,7 @@ The `--deterministic-torch` flag enables:
 python -m scripts.eval.match \
     --seed 42 \
     --model models/model.pt \
-    --a azmcts \
+    --a azbsmcts \
     --b bsmcts \
     --n 20
 ```

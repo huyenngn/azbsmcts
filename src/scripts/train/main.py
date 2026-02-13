@@ -43,7 +43,7 @@ def self_play_one_game(
   state = game.new_initial_state()
 
   a0, p0 = agent_factory.make_agent(
-    kind="azmcts",
+    kind="azbsmcts",
     player_id=0,
     game=game,
     search_cfg=search_cfg,
@@ -57,7 +57,7 @@ def self_play_one_game(
     game_idx=game_idx,
   )
   a1, p1 = agent_factory.make_agent(
-    kind="azmcts",
+    kind="azbsmcts",
     player_id=1,
     game=game,
     search_cfg=search_cfg,
@@ -74,10 +74,10 @@ def self_play_one_game(
   if (
     p0 is None
     or p1 is None
-    or not isinstance(a0, agents.AZMCTSAgent)
-    or not isinstance(a1, agents.AZMCTSAgent)
+    or not isinstance(a0, agents.AZBSMCTSAgent)
+    or not isinstance(a1, agents.AZBSMCTSAgent)
   ):
-    raise ValueError("AZMCTS agents required for self-play")
+    raise ValueError("AZBSMCTS agents required for self-play")
 
   traj: list[tuple[np.ndarray, np.ndarray, int]] = []
 

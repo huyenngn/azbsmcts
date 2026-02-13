@@ -80,7 +80,7 @@ def make_agent(
   opponent_policy: samplers.OpponentPolicy | None = None
   az_net = None
 
-  if kind == "azmcts":
+  if kind == "azbsmcts":
     if net is not None:
       az_net = net
     elif model_path is not None:
@@ -91,7 +91,7 @@ def make_agent(
         device=device,
       )
     else:
-      raise ValueError("azmcts requires either 'net' or 'model_path'")
+      raise ValueError("azbsmcts requires either 'net' or 'model_path'")
 
     def make_opponent_policy(
       network: nets.TinyPolicyValueNet, dev: str
@@ -146,9 +146,9 @@ def make_agent(
       sampler,
     )
 
-  if kind == "azmcts":
+  if kind == "azbsmcts":
     return (
-      agents.AZMCTSAgent(
+      agents.AZBSMCTSAgent(
         game=game,
         player_id=player_id,
         obs_size=obs_size,
