@@ -151,7 +151,7 @@ def main() -> None:
     )
     res = match.run_match(
       game=game,
-      a="azmcts",
+      a="azbsmcts",
       b="bsmcts",
       n=args.eval_n,
       search_cfg=search_cfg,

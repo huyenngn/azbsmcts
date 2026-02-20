@@ -17,7 +17,7 @@ export type GameStateResponse = {
 
 export type ParticlesResponse = {
   observations: string[]
-  diversity: number
+  total: number
 }
 
 export type PreviousMoveInfo = {

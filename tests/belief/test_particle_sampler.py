@@ -107,7 +107,7 @@ class TestParticleBeliefSampler:
 
     sampler.reset()
     assert len(sampler._history) == 0
-    assert len(sampler._particles) == 0
+    assert len(sampler._particle_weights) == 0
 
   def test_step_builds_particles(self, game: openspiel.Game) -> None:
     """Test that step triggers particle building."""
@@ -123,7 +123,7 @@ class TestParticleBeliefSampler:
 
     # Particles are built lazily on sample(), not during step()
     sampler.sample()
-    assert len(sampler._particles) > 1
+    assert len(sampler._particle_weights) > 1
 
   def test_sample_returns_state(self, game: openspiel.Game) -> None:
     """Test that sample returns a valid state."""

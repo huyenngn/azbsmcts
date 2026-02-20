@@ -5,8 +5,8 @@ from agents.bsmcts import BSMCTSAgent
 
 __all__ = [
   "Agent",
-  "MCTSAgent",
-  "PolicyTargetMixin",
   "AZBSMCTSAgent",
   "BSMCTSAgent",
+  "MCTSAgent",
+  "PolicyTargetMixin",
 ]

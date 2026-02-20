@@ -28,7 +28,7 @@ const isLoading = ref<boolean>(false)
 const isAiThinking = ref<boolean>(false)
 const moveHistory = ref<string[]>([])
 const particles = ref<number[][]>([])
-const particleDiversity = ref<number>(0)
+const totalParticles = ref<number>(0)
 
 function updateGameState(data: GameStateResponse) {
   if (data.current_player !== props.playerId) {
@@ -136,11 +136,11 @@ async function fetchParticles() {
       const particle = parseBoard(observation)
       particles.value.push(particle)
     }
-    particleDiversity.value = data.diversity
+    totalParticles.value = data.total
   } catch (error) {
     console.error('Failed to fetch particles:', error)
     particles.value = []
-    particleDiversity.value = 0
+    totalParticles.value = 0
   } finally {
     isLoading.value = false
   }
@@ -173,7 +173,7 @@ onMounted(() => {
           ><RotateCw
         /></Button>
         <ParticlesVisualizer
-          :particleDiversity="particleDiversity"
+          :totalParticles="totalParticles"
           :particles="particles"
           :disabled="isLoading"
           @fetchParticles="fetchParticles"

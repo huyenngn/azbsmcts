@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import dataclasses
 import logging
 import random
@@ -17,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 INITIAL_STATE_SERIALIZED = "\n"
 
-INITIAL_BUDGET_FRACTION = 0.7
-
 
 @dataclasses.dataclass
 class _StepRecord:
@@ -27,8 +24,7 @@ class _StepRecord:
   actor_is_ai: bool
   ai_action: int | None
   ai_obs_after: bytes
-  checkpoint_particles: list[str]
-  particle_diversity: float
+  particle_weights: dict[str, float] | None
 
 
 class ParticleDeterminizationSampler:
@@ -58,34 +54,38 @@ class ParticleDeterminizationSampler:
     self.game = game
     self.ai_id = ai_id
     self.max_num_particles = max_num_particles
-    self.max_matches_per_particle = min(
-      max_matches_per_particle, game.num_distinct_actions()
-    )
+    self.max_matches_per_particle = max_matches_per_particle
     self.checkpoint_interval = checkpoint_interval
     self.rebuild_tries = rebuild_tries
     self.rng = random.Random(seed)
     self.opponent_policy = opponent_policy
     self.temperature = temperature
     self._history: list[_StepRecord] = []
-    self._particles: list[str] = []
-    self._last_valid_sample: str = INITIAL_STATE_SERIALIZED
+    self._particle_weights: dict[str, float] = {}
+    self._last_valid_sample: tuple[str, float] = (
+      INITIAL_STATE_SERIALIZED,
+      1.0,
+    )
     self._checkpoint_indices: set[int] = set()
 
   def sample_unique_particles(self, n: int) -> list[openspiel.State]:
     """Return up to n unique particles as deserialized game states."""
-    if not self._particles:
+    if not self._particle_weights:
       return []
 
     return [
       self.game.deserialize_state(p)
-      for p in self.rng.sample(self._particles, min(n, len(self._particles)))
+      for p in self.rng.sample(
+        list(self._particle_weights.keys()),
+        min(n, len(self._particle_weights)),
+      )
     ]
 
   def reset(self) -> None:
     """Clear history and particles for a new game."""
     self._history.clear()
-    self._particles.clear()
-    self._last_valid_sample = INITIAL_STATE_SERIALIZED
+    self._particle_weights.clear()
+    self._last_valid_sample = (INITIAL_STATE_SERIALIZED, 1.0)
     self._checkpoint_indices.clear()
 
   def step(
@@ -96,26 +96,27 @@ class ParticleDeterminizationSampler:
     actor/action describe the real move taken in the environment.
     real_state_after is used ONLY to extract the AI observation (non-cheating).
     """
-    checkpoint_particles: list[str] = []
-    if self._particles and (
+    particle_weights = None
+    if self._particle_weights and (
       len(self._history) % self.checkpoint_interval == 0
     ):
-      checkpoint_particles = self._particles
+      particle_weights = self._particle_weights.copy()
       self._checkpoint_indices.add(len(self._history))
 
     rec = _StepRecord(
       actor_is_ai=(actor == self.ai_id),
       ai_action=(action if actor == self.ai_id else None),
       ai_obs_after=self._ai_obs(real_state_after),
-      checkpoint_particles=checkpoint_particles,
-      particle_diversity=self._get_particle_diversity(self._particles),
+      particle_weights=particle_weights,
     )
     self._history.append(rec)
 
     if rec.actor_is_ai:
-      self._particles = self._resample_particles_for_ai(rec)
+      self._particle_weights = self._resample_particles_for_ai(rec)
     else:
-      self._particles = self._resample_particles_for_opponent(rec.ai_obs_after)
+      self._particle_weights = self._resample_particles_for_opponent(
+        rec.ai_obs_after
+      )
 
   def sample(self) -> str:
     """Sample a particle consistent with current observation history."""
@@ -123,46 +124,32 @@ class ParticleDeterminizationSampler:
     return gamma
 
   def sample_with_prior(self) -> tuple[str, float]:
-    """Sample a particle and return ``(serialized_state, P(γ))``.
-
-    ``P(γ)`` is the particle's frequency in the pool, representing the
-    opponent-model–based prior.  When no opponent policy is provided,
-    all surviving particles are equally likely so ``P(γ) ≈ 1/unique``.
-    """
+    """Sample a particle with prior probability."""
     if not self._history:
       return INITIAL_STATE_SERIALIZED, 1.0
 
-    if not self._particles:
+    if not self._particle_weights:
       self._rebuild_particles()
 
-    if not self._particles:
+    if not self._particle_weights:
       logger.warning(
         "Particle sampler belief collapsed with empty particles after "
         "rebuild; falling back to last valid sample."
       )
-      return self._last_valid_sample, 1.0
+      return self._last_valid_sample
 
-    chosen = self.rng.choice(self._particles)
-    self._last_valid_sample = chosen
+    chosen = self.rng.choice(list(self._particle_weights.keys()))
 
-    # Prior = frequency of this particle in the pool
-    count = self._particles.count(chosen)
-    prior = count / len(self._particles)
+    prior = self._particle_weights[chosen] / sum(
+      self._particle_weights.values()
+    )
+    self._last_valid_sample = (chosen, prior)
     return chosen, prior
 
   def _ai_obs(self, state: openspiel.State) -> bytes:
     return np.asarray(
       state.observation_tensor(self.ai_id), dtype=np.float32
     ).tobytes()
-
-  def _get_particle_diversity(
-    self, particles: list[str] | None = None
-  ) -> float:
-    if particles is None:
-      particles = self._particles
-    if not particles:
-      return 0.0
-    return len(set(particles)) / len(particles)
 
   def _get_or_create_transition(
     self, parent: str, action: int
@@ -182,27 +169,27 @@ class ParticleDeterminizationSampler:
   def _resample_particles_for_ai(
     self,
     rec: _StepRecord,
-    particles: list[str] | None = None,
+    particle_weights: dict[str, float] | None = None,
     num_particles: int | None = None,
-  ) -> list[str]:
+  ) -> dict[str, float]:
     assert rec.actor_is_ai and rec.ai_action is not None
-    if particles is None:
-      particles = self._particles
+    if particle_weights is None:
+      particle_weights = self._particle_weights
     if num_particles is None:
-      num_particles = len(particles)
+      num_particles = len(particle_weights)
 
-    surviving: list[str] = []
-    for p in set(particles):
+    surviving: list[tuple[str, str]] = []
+    for p in set(particle_weights.keys()):
       result = self._get_or_create_transition(p, rec.ai_action)
       if result is None:
         continue
       child_str, obs = result
       if obs == rec.ai_obs_after:
-        surviving.append(child_str)
+        surviving.append((p, child_str))
 
     if surviving:
-      return self.rng.choices(surviving, k=num_particles)
-    return []
+      return {child: particle_weights[p] for p, child in surviving}
+    return {}
 
   def _get_opponent_action_weights(
     self,
@@ -236,55 +223,53 @@ class ParticleDeterminizationSampler:
   def _resample_particles_for_opponent(
     self,
     target_obs: bytes,
-    particles: list[str] | None = None,
+    particle_weights: dict[str, float] | None = None,
     matches_per_particle: int | None = None,
     num_particles: int | None = None,
     temperature: float = 1.0,
-  ) -> list[str]:
-    if particles is None:
-      particles = self._particles
+  ) -> dict[str, float]:
+    if particle_weights is None:
+      particle_weights = self._particle_weights
     if matches_per_particle is None:
       matches_per_particle = self.game.num_distinct_actions()
     if num_particles is None:
       num_particles = self.max_num_particles
 
-    particle_counts = collections.Counter(particles)
-
-    particle_data: list[tuple[str, list[int], int]] = []
+    particle_data: list[tuple[str, list[int], float]] = []
     deserialized_states: list[openspiel.State] = []
-    for particle, count in particle_counts.items():
+    for particle, weight in particle_weights.items():
       s = self.game.deserialize_state(particle)
       legal = s.legal_actions()
       if legal:
-        particle_data.append((particle, legal, count))
+        particle_data.append((particle, legal, weight))
         deserialized_states.append(s)
 
     if not particle_data:
-      return []
+      return {}
 
-    if self.game.name == "phantom_go":
+    if "go" in self.game.name:
       tmp_data = particle_data[0]
       tmp = self.game.deserialize_state(tmp_data[0])
       tmp.apply_action(tmp_data[1][-1])
       if target_obs == self._ai_obs(tmp):
-        results: list[str] = []
-        for s, (_, legal, _count) in zip(
+        results: dict[str, float] = {}
+        for s, (_, legal, weight) in zip(
           deserialized_states, particle_data, strict=True
         ):
           s.apply_action(legal[-1])
-          results.append(s.serialize())
+          results[s.serialize()] = weight
         return results
 
     all_probs = self._get_opponent_action_weights(deserialized_states)
 
-    particle_weights: dict[str, float] = {}
-    for (particle, legal, count), probs in zip(
+    new_particle_weights: dict[str, float] = {}
+    for (particle, legal, weight), probs in zip(
       particle_data, all_probs, strict=True
     ):
       if not probs:
         continue
 
-      if self.game.name == "phantom_go":
+      if "go" in self.game.name:
         untried_indices = set(range(len(legal) - 1))
       else:
         untried_indices = set(range(len(legal)))
@@ -307,119 +292,115 @@ class ParticleDeterminizationSampler:
         if obs != target_obs:
           continue
 
-        # Scale weight by duplicate count so common parents contribute more
-        weight = probs[action_idx] * count
-        particle_weights[child_str] = (
-          particle_weights.get(child_str, 0.0) + weight
+        new_weight = probs[action_idx] * weight
+        new_particle_weights[child_str] = (
+          new_particle_weights.get(child_str, 0.0) + new_weight
         )
         match_count += 1
 
-    if not particle_weights:
-      return []
+    if not new_particle_weights:
+      return {}
+
+    if len(new_particle_weights) > num_particles:
+      sorted_particles = sorted(
+        new_particle_weights.items(), key=lambda x: x[1], reverse=True
+      )
+      new_particle_weights = dict(sorted_particles[:num_particles])
 
     weights = utils.apply_temp(
-      np.array(list(particle_weights.values()), dtype=np.float32),
+      np.array(list(new_particle_weights.values()), dtype=np.float32),
       temperature=temperature,
     )
 
-    return self.rng.choices(
-      population=list(particle_weights.keys()),
-      weights=list(weights),
-      k=num_particles,
-    )
+    return dict(zip(new_particle_weights.keys(), weights))
 
   def _rebuild_particles(self) -> None:
     """Rebuild particles using the stored observation history."""
     if not self._history:
-      self._particles = []
+      self._particle_weights = {}
       return
 
     logger.debug(
-      f"Rebuilding particles with history of {len(self._history)} steps and {len(self._particles)} existing particles."
+      f"Rebuilding particles with history of {len(self._history)} steps and {len(self._particle_weights)} existing particles."
     )
 
-    sorted_checkpoint_indices = list(self._checkpoint_indices)
-    sorted_checkpoint_indices.sort()
+    sorted_checkpoint_indices = sorted(self._checkpoint_indices, reverse=True)
     checkpoint_step = 1 + len(sorted_checkpoint_indices) // self.rebuild_tries
+
     logger.debug(
       f"checkpoint indices: {sorted_checkpoint_indices}. checkpoint step size: {checkpoint_step}"
     )
 
     for attempt in range(self.rebuild_tries):
-      if (tmp := (1 + attempt * checkpoint_step)) <= len(
+      if (tmp := (attempt * checkpoint_step)) < len(
         sorted_checkpoint_indices
       ) and attempt < self.rebuild_tries - 1:
-        start_idx = sorted_checkpoint_indices[-tmp]
-        particles = self._history[start_idx].checkpoint_particles
+        start_idx = sorted_checkpoint_indices[tmp]
+        particle_weights = self._history[start_idx].particle_weights
       else:
-        particles = [INITIAL_STATE_SERIALIZED]
+        particle_weights = {INITIAL_STATE_SERIALIZED: 1.0}
         start_idx = 0
 
       logger.debug(
-        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} starting from index {start_idx} with {self._history[start_idx].particle_diversity:.2%} diversity."
+        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} starting from index {start_idx}."
       )
       history_scale = (
         1.0 + (len(self._history) - start_idx) / self.game.max_game_length()
       )
       attempt_scale = 1.0 + attempt / self.rebuild_tries
-      num_particles = min(
-        int(self.max_num_particles * INITIAL_BUDGET_FRACTION * history_scale),
-        self.max_num_particles,
+      num_particles = int(
+        self.max_num_particles * history_scale * attempt_scale
       )
       matches_per_particle = min(
-        int(
-          self.max_matches_per_particle
-          * INITIAL_BUDGET_FRACTION
-          * history_scale
-        ),
-        self.max_matches_per_particle,
+        int(self.max_matches_per_particle * history_scale * attempt_scale),
+        self.game.num_distinct_actions(),
       )
       temperature = self.temperature * history_scale * attempt_scale
 
       logger.debug(
         f"Rebuilding with num_particles={num_particles} "
-        f"matches_per_particle={matches_per_particle} and temperature={temperature:.2f}"
+        f"matches_per_particle={matches_per_particle} "
+        f"temperature={temperature:.2f}"
       )
 
       ok = True
       for idx in range(start_idx, len(self._history)):
         rec = self._history[idx]
-        if not particles:
+        if not particle_weights:
           ok = False
           break
 
         if rec.actor_is_ai:
-          particles = self._resample_particles_for_ai(
-            rec, particles, num_particles=num_particles
+          particle_weights = self._resample_particles_for_ai(
+            rec, particle_weights, num_particles=num_particles
           )
         else:
-          particles = self._resample_particles_for_opponent(
+          particle_weights = self._resample_particles_for_opponent(
             rec.ai_obs_after,
-            particles,
+            particle_weights,
             matches_per_particle,
             num_particles=num_particles,
             temperature=temperature,
           )
 
-        if idx in self._checkpoint_indices:
-          diversity = self._get_particle_diversity(particles)
-          if rec.particle_diversity < diversity:
-            logger.debug(
-              f"Updating checkpoint at index {idx} with diversity {diversity:.2%}"
-            )
-            rec.particle_diversity = diversity
-            rec.checkpoint_particles = particles
+        if idx in self._checkpoint_indices and (
+          not rec.particle_weights
+          or len(rec.particle_weights) < len(particle_weights)
+        ):
+          logger.debug(
+            f"Updating checkpoint at index {idx} with {len(particle_weights)} particles."
+          )
+          rec.particle_weights = particle_weights.copy()
 
-      if ok and particles:
+      if ok and particle_weights:
         if attempt > 0:
           checkpoint_idx = len(self._history) - 1
           self._checkpoint_indices.add(checkpoint_idx)
           rec = self._history[checkpoint_idx]
-          rec.checkpoint_particles = particles
-          rec.particle_diversity = self._get_particle_diversity(particles)
+          rec.particle_weights = particle_weights.copy()
           logger.debug(
-            f"Final checkpoint updated with {len(particles)} particles and diversity {rec.particle_diversity:.2%}"
+            f"Final checkpoint updated with {len(particle_weights)} particles."
           )
 
-        self._particles = particles
+        self._particle_weights = particle_weights
         return

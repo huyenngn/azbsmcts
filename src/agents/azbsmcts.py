@@ -1,17 +1,4 @@
-"""AlphaZero-guided Belief-State MCTS (AZBSMCTS).
-
-Structurally identical to BS-MCTS (Algorithm 1 from Wang et al., 2015) but
-replaces random rollouts with neural-network evaluation:
-
-* **Expansion** — the NN policy head provides per-(γ, action) priors ``p``.
-* **Leaf evaluation** — the NN value head replaces the rollout.
-* **Selection** — PUCT (Q + c·P·√N/(1+n)) instead of UCT.
-* **Backpropagation** — sum-based ``w`` instead of running-average ``u``.
-* **Action selection** — visit-count policy vector (for training targets).
-
-Everything else — the T×S sampling loop, the per-γ belief tree, Opponent
-Guessing / Predicting — is inherited from ``BSMCTSAgent``.
-"""
+"""AlphaZero-guided Belief-State MCTS (AZBSMCTS)."""
 
 from __future__ import annotations
 
@@ -20,8 +7,8 @@ import typing as t
 import numpy as np
 import torch
 
-import agents
 import nets
+from agents import base
 from utils import softmax
 
 if t.TYPE_CHECKING:
@@ -29,33 +16,8 @@ if t.TYPE_CHECKING:
   from belief import samplers, tree
 
 
-class AZBSMCTSAgent(agents.MCTSAgent, agents.PolicyTargetMixin):
-  """AlphaZero-guided BS-MCTS agent.
-
-  Inherits the full BS-MCTS loop from ``BSMCTSAgent`` and overrides:
-  * ``_expand`` — uses NN policy priors instead of plain legal-action init.
-  * ``_search`` — uses PUCT selection and NN value instead of UCT + rollout.
-  * ``select_action`` — returns argmax-visit action (greedy).
-  * ``select_action_with_pi`` — returns (action, policy vector) for training.
-
-  Parameters
-  ----------
-  game, player_id, sampler, T, S, seed, lambda_guess, lambda_predict,
-  length_discount:
-      Passed through to ``BSMCTSAgent``.
-  obs_size : int
-      Size of the observation tensor expected by the network.
-  c_puct : float
-      PUCT exploration constant (replaces ``c_uct``).
-  device : str
-      Torch device for NN inference.
-  net : TinyPolicyValueNet | None
-      Pre-loaded network.  Exactly one of ``net`` / ``model_path`` required.
-  model_path : str | None
-      Path to saved model weights.
-  dirichlet_alpha, dirichlet_weight : float
-      Dirichlet noise parameters for root exploration during training.
-  """
+class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
+  """AlphaZero-guided BS-MCTS agent."""
 
   def __init__(
     self,
@@ -88,9 +50,9 @@ class AZBSMCTSAgent(agents.MCTSAgent, agents.PolicyTargetMixin):
       lambda_predict=lambda_predict,
       length_discount=length_discount,
     )
-    self.c_puct = float(c_puct)
-    self.dirichlet_alpha = float(dirichlet_alpha)
-    self.dirichlet_weight = float(dirichlet_weight)
+    self.c_puct = c_puct
+    self.dirichlet_alpha = dirichlet_alpha
+    self.dirichlet_weight = dirichlet_weight
 
     self.device = device
     if net is None:
@@ -106,7 +68,7 @@ class AZBSMCTSAgent(agents.MCTSAgent, agents.PolicyTargetMixin):
       self.net = net.to(device)
       self.net.eval()
 
-    self._obs_size = int(obs_size)
+    self._obs_size = obs_size
 
     # Pending leaf evaluations for batched NN inference.
     # Each entry: (gamma_key, node, state, path-from-root)
@@ -417,13 +379,12 @@ class AZBSMCTSAgent(agents.MCTSAgent, agents.PolicyTargetMixin):
       gs = root.get_or_create_gamma(gamma_str)
       gs.prior = gamma_prior
 
+      gamma_state = self.game.deserialize_state(gamma_str)
       # Expand root for this γ with NN priors (+ optional Dirichlet)
       if not gs.actions:
-        gamma_state = self.game.deserialize_state(gamma_str)
         self._expand(gamma_str, gamma_state, root, add_dirichlet=add_dirichlet)
 
       for _ in range(self.S):
-        gamma_state = self.game.deserialize_state(gamma_str)
         self._search(gamma_str, gamma_state, root, batch_mode=True)
 
       self._evaluate_pending_leaves()
@@ -431,14 +392,14 @@ class AZBSMCTSAgent(agents.MCTSAgent, agents.PolicyTargetMixin):
     pi = self._root_visit_policy(root, temperature=float(temperature))
 
     legal = state.legal_actions()
-    probs = [pi[a] for a in legal]
+    probs = np.array([pi[a] for a in legal], dtype=np.float32)
 
     total = float(np.sum(probs))
     if total <= 0:
       best_a = root.get_most_visited_action(actions=legal)
       return int(best_a), pi
 
-    probs /= total  # type: ignore
+    probs /= total
     r = self.rng.random()
     cum = 0.0
     action = 0

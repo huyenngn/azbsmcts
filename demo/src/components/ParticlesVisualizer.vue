@@ -15,7 +15,7 @@ import GoBoard from '@/components/GoBoard.vue'
 import { Brain } from 'lucide-vue-next'
 
 const props = defineProps<{
-  particleDiversity: number
+  totalParticles: number
   particles: number[][]
   disabled: boolean
 }>()
@@ -41,8 +41,7 @@ const emit = defineEmits<{
         <DrawerHeader>
           <DrawerTitle>Particle Filter Visualization</DrawerTitle>
           <DrawerDescription
-            >This is a subset of the current belief state. Particle diversity is at
-            {{ (props.particleDiversity * 100).toFixed(2) }}%.
+            >This is a subset of the {{ props.totalParticles }} total unique belief particles.
           </DrawerDescription>
         </DrawerHeader>
         <ScrollArea class="h-96">

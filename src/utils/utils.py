@@ -14,5 +14,9 @@ def apply_temp(probs: np.ndarray, temperature: float) -> np.ndarray:
   """
   if temperature != 1.0:
     probs = np.power(probs, 1.0 / temperature)
-    probs /= probs.sum()
+    total = probs.sum()
+    if total <= 0.0 or not np.isfinite(total):
+      probs = np.ones_like(probs) / len(probs)
+    else:
+      probs /= total
   return probs

@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import typing as t
 
-import agents
+from agents import base
 
 if t.TYPE_CHECKING:
   import openspiel
   from belief import samplers, tree
 
 
-class BSMCTSAgent(agents.MCTSAgent):
+class BSMCTSAgent(base.MCTSAgent):
   """Belief-State Monte Carlo Tree Search agent  (Algorithm 1).
 
   Parameters
