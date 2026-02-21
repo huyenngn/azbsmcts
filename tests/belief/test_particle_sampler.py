@@ -107,12 +107,12 @@ class TestParticleBeliefSampler:
 
     sampler.reset()
     assert len(sampler._history) == 0
-    assert len(sampler._particle_weights) == 0
+    assert len(sampler._particles) == 0
 
   def test_step_builds_particles(self, game: openspiel.Game) -> None:
     """Test that step triggers particle building."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, max_num_particles=10, seed=42
+      game=game, ai_id=0, seed=42
     )
     state = game.new_initial_state()
 
@@ -123,12 +123,12 @@ class TestParticleBeliefSampler:
 
     # Particles are built lazily on sample(), not during step()
     sampler.sample()
-    assert len(sampler._particle_weights) > 1
+    assert len(sampler._particles) > 1
 
   def test_sample_returns_state(self, game: openspiel.Game) -> None:
     """Test that sample returns a valid state."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, max_num_particles=10, seed=42
+      game=game, ai_id=0, seed=42
     )
 
     state = game.new_initial_state()
@@ -145,7 +145,7 @@ class TestParticleBeliefSampler:
   ) -> None:
     """Test fallback to cloning when no particles available."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, max_num_particles=10, seed=42
+      game=game, ai_id=0, seed=42
     )
 
     # No history, should return initial state

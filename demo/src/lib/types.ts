@@ -1,4 +1,5 @@
 export type StartGameRequest = {
+  board_size: number
   player_id: number
   policy: string
 }

@@ -17,11 +17,13 @@ import { formatMoveInfo, parseBoard } from '@/lib/game'
 const NUM_PARTICLES_TO_SHOW = 10
 
 const props = defineProps<{
+  boardSize: number
   playerId: number
   opponentAi: string
 }>()
 
-const board = ref<number[]>(Array(81).fill(-1))
+const PASS_ACTION = props.boardSize * props.boardSize
+const board = ref<number[]>(Array(props.boardSize * props.boardSize).fill(-1))
 const isTerminal = ref<boolean>(false)
 const returns = ref<number[]>([0.0, 0.0])
 const isLoading = ref<boolean>(false)
@@ -60,6 +62,7 @@ async function startGame() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          board_size: props.boardSize,
           player_id: props.playerId,
           policy: props.opponentAi,
         } as StartGameRequest),
@@ -173,6 +176,7 @@ onMounted(() => {
           ><RotateCw
         /></Button>
         <ParticlesVisualizer
+          :boardSize="boardSize"
           :totalParticles="totalParticles"
           :particles="particles"
           :disabled="isLoading"
@@ -184,9 +188,9 @@ onMounted(() => {
       :class="{ 'opacity-50 pointer-events-none': isLoading || isTerminal }"
       class="grow sm:grow-0 flex items-stretch sm:items-stretch justify-stretch sm:justify-between gap-8 sm:gap-0 sm:flex-row flex-col"
     >
-      <GoBoard :board="board" @move="handleMove" />
+      <GoBoard :boardSize="boardSize" :board="board" @move="handleMove" />
       <div class="grow flex flex-col items-stretch justify-between gap-4">
-        <Button @click="handleMove(81)">Pass</Button>
+        <Button @click="handleMove(PASS_ACTION)">Pass</Button>
         <MoveInfoHistory :previousMoveInfos="moveHistory" />
       </div>
     </div>

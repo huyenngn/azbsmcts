@@ -38,7 +38,6 @@ logger = logging.getLogger("phantom_go_api")
 app = fastapi.FastAPI()
 
 GAME_NAME = "phantom_go"
-GAME_PARAMS = {"board_size": 9}
 
 
 @dataclasses.dataclass
@@ -70,6 +69,7 @@ class PlayerColor(enum.Enum):
 
 
 class StartGameRequest(pydantic.BaseModel):
+  board_size: int
   player_id: int
   policy: str  # "random" | "bsmcts" | "azbsmcts"
 
@@ -207,13 +207,13 @@ def _game_state_response(
 ) -> GameStateResponse:
   st = app.state.state
   return GameStateResponse(
-    current_player=PlayerColor(st.current_player()),
-    observation=st.observation_string(app.state.human_id)
+    current_player=PlayerColor(st.current_player())
     if not st.is_terminal()
-    else "",
+    else PlayerColor.Black,
+    observation=st.observation_string(app.state.human_id),
     previous_move_info=move_info,
     is_terminal=st.is_terminal(),
-    returns=list(st.returns()),
+    returns=st.returns(),
   )
 
 
@@ -255,6 +255,10 @@ def _start_game_stream() -> t.Iterator[str]:
   try:
     for res in _play_ai_turns():
       yield _sse_event("update", res.model_dump(mode="json"))
+
+    yield _sse_event(
+      "done", _game_state_response(None).model_dump(mode="json")
+    )
   except Exception as exc:
     logger.exception("Streaming start_game failed")
     yield _sse_event(
@@ -275,7 +279,9 @@ def start_game(request: StartGameRequest) -> responses.StreamingResponse:
     )
 
   app.state.game_number += 1
-  app.state.game = openspiel.Game(GAME_NAME, GAME_PARAMS)
+  app.state.game = openspiel.Game(
+    GAME_NAME, {"board_size": request.board_size}
+  )
   app.state.state = app.state.game.new_initial_state()
 
   app.state.human_id = request.player_id
@@ -334,7 +340,7 @@ def get_particles(num_particles: int) -> ParticlesResponse:
     raise fastapi.HTTPException(status_code=400, detail="No active game")
 
   logger.info(
-    f"Particle filter has {len(app.state.particle._particle_weights)} particles"
+    f"Particle filter has {len(app.state.particle._particles)} particles"
   )
 
   observations: list[str] = []
@@ -344,7 +350,7 @@ def get_particles(num_particles: int) -> ParticlesResponse:
     observations.append(obs)
 
   return ParticlesResponse(
-    observations=observations, total=len(app.state.particle._particle_weights)
+    observations=observations, total=len(app.state.particle._particles)
   )
 
 
@@ -364,8 +370,6 @@ def main() -> None:
   p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
   # Particle sampler
-  p.add_argument("--max-num-particles", type=int, default=100)
-  p.add_argument("--max-matches-per-particle", type=int, default=50)
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   # Model path for azbsmcts
@@ -394,8 +398,6 @@ def main() -> None:
       dirichlet_weight=args.dirichlet_weight,
     ),
     sampler_cfg=config.SamplerConfig(
-      max_num_particles=args.max_num_particles,
-      max_matches_per_particle=args.max_matches_per_particle,
       rebuild_tries=args.rebuild_tries,
     ),
     model_path=pathlib.Path(args.model_path),

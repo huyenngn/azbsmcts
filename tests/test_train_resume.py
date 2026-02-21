@@ -100,16 +100,14 @@ class TestResumeHelpers:
       search=config.SearchConfig(
         T=4,
         S=2,
-        c_puct=1.0,
+        c_puct=1.5,
         dirichlet_alpha=0.3,
         dirichlet_weight=0.25,
       ),
       budget=config.TrainBudget(games=10, epochs=2, batch=32),
       lr=0.001,
       sampler=config.SamplerConfig(
-        max_num_particles=8,
-        max_matches_per_particle=2,
-        rebuild_tries=10,
+        rebuild_tries=5,
       ),
     )
 

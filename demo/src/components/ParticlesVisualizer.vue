@@ -5,23 +5,24 @@ import {
   DrawerFooter,
   DrawerTrigger,
   DrawerClose,
-} from '@/components/ui/drawer'
-import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue'
-import DrawerHeader from '@/components/ui/drawer/DrawerHeader.vue'
-import DrawerTitle from '@/components/ui/drawer/DrawerTitle.vue'
-import DrawerDescription from '@/components/ui/drawer/DrawerDescription.vue'
-import { Button } from '@/components/ui/button'
-import GoBoard from '@/components/GoBoard.vue'
-import { Brain } from 'lucide-vue-next'
+} from "@/components/ui/drawer"
+import ScrollArea from "@/components/ui/scroll-area/ScrollArea.vue"
+import DrawerHeader from "@/components/ui/drawer/DrawerHeader.vue"
+import DrawerTitle from "@/components/ui/drawer/DrawerTitle.vue"
+import DrawerDescription from "@/components/ui/drawer/DrawerDescription.vue"
+import { Button } from "@/components/ui/button"
+import GoBoard from "@/components/GoBoard.vue"
+import { Brain } from "lucide-vue-next"
 
 const props = defineProps<{
+  boardSize: number
   totalParticles: number
   particles: number[][]
   disabled: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'fetchParticles'): void
+  (e: "fetchParticles"): void
 }>()
 </script>
 
@@ -37,7 +38,7 @@ const emit = defineEmits<{
       /></Button>
     </DrawerTrigger>
     <DrawerContent>
-      <div class="mx-auto w-full max-w-3xl">
+      <div class="mx-auto max-w-3xl">
         <DrawerHeader>
           <DrawerTitle>Particle Filter Visualization</DrawerTitle>
           <DrawerDescription
@@ -45,8 +46,13 @@ const emit = defineEmits<{
           </DrawerDescription>
         </DrawerHeader>
         <ScrollArea class="h-96">
-          <div class="flex flex-wrap gap-10 justify-between pointer-events-none">
-            <GoBoard :board="p" v-for="(p, index) in props.particles" :key="index" />
+          <div class="flex flex-wrap gap-10 justify-start pointer-events-none">
+            <GoBoard
+              :boardSize="props.boardSize"
+              :board="p"
+              v-for="(p, index) in props.particles"
+              :key="index"
+            />
           </div>
         </ScrollArea>
         <DrawerFooter>

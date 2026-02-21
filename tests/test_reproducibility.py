@@ -95,8 +95,7 @@ class TestBSMCTSReproducibility:
     sampler = samplers.ParticleDeterminizationSampler(
       game=game,
       ai_id=player_id,
-      max_num_particles=8,
-      rebuild_tries=10,
+      rebuild_tries=5,
       seed=particle_seed,
     )
     agent_seed = seeding.derive_seed(

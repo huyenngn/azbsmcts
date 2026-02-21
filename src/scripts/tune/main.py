@@ -39,8 +39,6 @@ def main() -> None:
   )
   parser.add_argument("--direction", type=str, default="maximize")
 
-  parser.add_argument("--max-num-particles", type=int, default=150)
-  parser.add_argument("--max-matches-per-particle", type=int, default=100)
   parser.add_argument("--rebuild-tries", type=int, default=5)
   args = parser.parse_args()
 
@@ -105,11 +103,7 @@ def main() -> None:
       dirichlet_alpha=dirichlet_alpha,
       dirichlet_weight=dirichlet_weight,
     )
-    sampler_cfg = config.SamplerConfig(
-      max_num_particles=args.max_num_particles,
-      max_matches_per_particle=args.max_matches_per_particle,
-      rebuild_tries=args.rebuild_tries,
-    )
+    sampler_cfg = config.SamplerConfig(rebuild_tries=args.rebuild_tries)
     run_id = f"trial{trial.number:04d}"
 
     # Derive seeds deterministically for each trial

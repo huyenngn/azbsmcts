@@ -18,7 +18,7 @@ game = openspiel.Game("tic_tac_toe")
 search_cfg = config.SearchConfig(
   T=8, S=4, c_puct=1.5, dirichlet_alpha=0.0, dirichlet_weight=0.0
 )
-sampler_cfg = config.SamplerConfig(150, 100, 30)
+sampler_cfg = config.SamplerConfig(rebuild_tries=10)
 
 # Play one game
 r0, r1, game_length = match.play_game(

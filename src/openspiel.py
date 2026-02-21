@@ -15,6 +15,7 @@ class Game:
       name, params if params is not None else {}
     )
     self.name = self._game.get_type().short_name
+    self.board_size = self._game.get_parameters().get("board_size", None)
 
   def new_initial_state(self) -> State:
     """Create a new initial game state."""
@@ -99,3 +100,26 @@ class State:
   def serialize(self) -> str:
     """Return a string serialization of the state."""
     return self._state.serialize()
+
+  def _get_board_string(self, start: int, end: int) -> str:
+    game = self._state.get_game()
+    if "go" in game.get_type().short_name:
+      board_size = game.get_parameters()["board_size"]
+      lines = self._state.__str__().split("\n")
+      return "".join(
+        lines[
+          3 * start + 2 + start * board_size : 3 * end
+          + 2
+          + (end + 1) * board_size
+        ]
+      )
+    return self._state.__str__()
+
+  def full_board_string(self) -> str:
+    return self._get_board_string(0, 0)
+
+  def observation_board_string(self, player: int) -> str:
+    return self._get_board_string(2 - player, 2 - player)
+
+  def all_board_string(self) -> str:
+    return self._get_board_string(0, 2)

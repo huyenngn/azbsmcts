@@ -55,7 +55,7 @@ class BSMCTSAgent(base.MCTSAgent):
     game: openspiel.Game,
     player_id: int,
     sampler: samplers.DeterminizationSampler,
-    c_uct: float = 1.4,
+    c_uct: float = 1.5,
     T: int = 64,
     S: int = 8,
     seed: int = 0,

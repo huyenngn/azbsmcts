@@ -105,8 +105,6 @@ def main() -> None:
   )
 
   p.add_argument("--x-axis", type=str, default="games")  # from run config
-  p.add_argument("--max-num-particles", type=int, default=150)
-  p.add_argument("--max-matches-per-particle", type=int, default=100)
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
@@ -119,9 +117,7 @@ def main() -> None:
     dirichlet_alpha=args.dirichlet_alpha,
     dirichlet_weight=args.dirichlet_weight,
   )
-  sampler_cfg = config.SamplerConfig(
-    args.max_num_particles, args.max_matches_per_particle, args.rebuild_tries
-  )
+  sampler_cfg = config.SamplerConfig(args.rebuild_tries)
 
   game = openspiel.Game(game_cfg.name, game_cfg.params)
 

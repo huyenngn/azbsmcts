@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select'
 import { PlayerColor } from '@/lib/types'
 
+const boardSize = ref(5)
 const playerId = ref(PlayerColor.Black)
 const opponentAi = ref('azbsmcts')
 </script>
@@ -54,9 +55,28 @@ const opponentAi = ref('azbsmcts')
               </Select>
             </td>
           </tr>
+          <tr>
+            <td>Choose Board Size:</td>
+            <td>
+              <Select v-model="boardSize">
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem :value="3"> 3x3 </SelectItem>
+                    <SelectItem :value="5"> 5x5 </SelectItem>
+                    <SelectItem :value="9"> 9x9 </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </td>
+          </tr>
         </tbody>
       </table>
-      <RouterLink :to="`/game?playerId=${playerId}&opponentAi=${opponentAi}`">
+      <RouterLink
+        :to="`/game?playerId=${playerId}&opponentAi=${opponentAi}&boardSize=${boardSize}`"
+      >
         <Button>Start Game</Button>
       </RouterLink>
     </div>

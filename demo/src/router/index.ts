@@ -16,6 +16,7 @@ const router = createRouter({
       name: 'game',
       component: GameView,
       props: (route) => ({
+        boardSize: Number(route.query.boardSize) || 5,
         playerId: Number(route.query.playerId) || 0,
         opponentAi: route.query.opponentAi || 'random',
       }),

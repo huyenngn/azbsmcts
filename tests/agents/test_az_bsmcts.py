@@ -28,9 +28,7 @@ def net(game: openspiel.Game) -> nets.TinyPolicyValueNet:
 @pytest.fixture
 def sampler(game: openspiel.Game) -> samplers.ParticleDeterminizationSampler:
   """Create a particle sampler for testing."""
-  return samplers.ParticleDeterminizationSampler(
-    game=game, ai_id=0, max_num_particles=8, seed=42
-  )
+  return samplers.ParticleDeterminizationSampler(game=game, ai_id=0, seed=42)
 
 
 class TestAZBSMCTSAgent:
@@ -116,7 +114,7 @@ class TestAZBSMCTSAgent:
 
     def make_agent() -> agents.AZBSMCTSAgent:
       samp = samplers.ParticleDeterminizationSampler(
-        game=game, ai_id=0, max_num_particles=8, seed=123
+        game=game, ai_id=0, seed=123
       )
       return agents.AZBSMCTSAgent(
         game=game,
@@ -168,7 +166,7 @@ class TestAZBSMCTSAgent:
 
     # Agent without noise
     sampler2 = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, max_num_particles=8, seed=42
+      game=game, ai_id=0, seed=42
     )
     agent_no_noise = agents.AZBSMCTSAgent(
       game=game,
@@ -198,7 +196,7 @@ class TestBSMCTSAgent:
   def test_select_action_returns_legal(self, game: openspiel.Game) -> None:
     """Test that BS-MCTS agent returns legal actions."""
     sampler = samplers.ParticleDeterminizationSampler(
-      game=game, ai_id=0, max_num_particles=8, seed=42
+      game=game, ai_id=0, seed=42
     )
 
     agent = agents.BSMCTSAgent(
