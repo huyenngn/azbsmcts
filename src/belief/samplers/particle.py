@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import dataclasses
 import logging
 import random
@@ -42,7 +43,6 @@ class ParticleDeterminizationSampler:
     ai_id: int,
     num_particles: int = 50,
     matches_per_particle: int = 15,
-    checkpoint_interval: int = 5,
     rebuild_tries: int = 5,
     seed: int = 0,
     opponent_policy: OpponentPolicy | None = None,
@@ -52,8 +52,6 @@ class ParticleDeterminizationSampler:
       raise ValueError("num_particles must be > 0")
     if matches_per_particle <= 0:
       raise ValueError("matches_per_particle must be > 0")
-    if checkpoint_interval <= 0:
-      raise ValueError("checkpoint_interval must be > 0")
     if rebuild_tries <= 0:
       raise ValueError("rebuild_tries must be > 0")
 
@@ -61,7 +59,6 @@ class ParticleDeterminizationSampler:
     self.ai_id = ai_id
     self.num_particles = num_particles
     self.matches_per_particle = matches_per_particle
-    self.checkpoint_interval = checkpoint_interval
     self.rebuild_tries = rebuild_tries
     self.rng = random.Random(seed)
     self.opponent_policy = opponent_policy
@@ -102,18 +99,12 @@ class ParticleDeterminizationSampler:
     actor/action describe the real move taken in the environment.
     real_state_after is used ONLY to extract the AI observation (non-cheating).
     """
-    particles = None
-    if self._particles and (
-      len(self._history) % self.checkpoint_interval == 0
-    ):
-      particles = self._particles.copy()
-      self._checkpoint_indices.add(len(self._history))
 
     rec = _StepRecord(
       actor_is_ai=(actor == self.ai_id),
       ai_action=(action if actor == self.ai_id else None),
       ai_obs_after=self._ai_obs(real_state_after),
-      particles=particles,
+      particles=None,
     )
     self._history.append(rec)
 
@@ -158,7 +149,7 @@ class ParticleDeterminizationSampler:
   def _get_or_create_transition(
     self, parent: str, action: int
   ) -> tuple[str, str, bytes] | None:
-    """Get or compute (child_board, child_state, observation) for a transition.
+    """Get or compute (child_hash, child_state, observation) for a transition.
 
     Returns None if the action is not legal for this parent state.
     """
@@ -167,9 +158,9 @@ class ParticleDeterminizationSampler:
       return None
     s.apply_action(action)
     obs = self._ai_obs(s)
-    child_board = s.all_board_string()
+    child_hash = s.hash()
     child_str = s.serialize()
-    return child_board, child_str, obs
+    return child_hash, child_str, obs
 
   def _resample_particles_for_ai(
     self,
@@ -190,14 +181,14 @@ class ParticleDeterminizationSampler:
       )
       if result is None:
         continue
-      child_board, child_str, obs = result
+      child_hash, child_str, obs = result
       if obs == rec.ai_obs_after:
-        if child_board not in new_particles:
-          new_particles[child_board] = _Particle(
+        if child_hash not in new_particles:
+          new_particles[child_hash] = _Particle(
             serialized=child_str, weight=particle.weight
           )
         else:
-          new_particles[child_board].weight += particle.weight
+          new_particles[child_hash].weight += particle.weight
 
     return new_particles
 
@@ -247,7 +238,7 @@ class ParticleDeterminizationSampler:
 
     particle_data: list[tuple[str, list[int], float]] = []
     deserialized_states: list[openspiel.State] = []
-    for board_str, particle in particles.items():
+    for _, particle in particles.items():
       s = self.game.deserialize_state(particle.serialized)
       legal = s.legal_actions()
       if legal:
@@ -267,12 +258,14 @@ class ParticleDeterminizationSampler:
           deserialized_states, particle_data, strict=True
         ):
           s.apply_action(legal[-1])
-          board_str = s.all_board_string()
+          child_hash = s.hash()
           child_str = s.serialize()
-          if board_str not in results:
-            results[board_str] = _Particle(serialized=child_str, weight=weight)
+          if child_hash not in results:
+            results[child_hash] = _Particle(
+              serialized=child_str, weight=weight
+            )
           else:
-            results[board_str].weight += weight
+            results[child_hash].weight += weight
         return results
 
     all_probs = self._get_opponent_action_weights(deserialized_states)
@@ -303,17 +296,17 @@ class ParticleDeterminizationSampler:
         result = self._get_or_create_transition(parent_serialized, action)
         if result is None:
           continue
-        child_board, child_str, obs = result
+        child_hash, child_str, obs = result
         if obs != target_obs:
           continue
 
         new_weight = probs[action_idx] * weight
-        if child_board not in new_particles:
-          new_particles[child_board] = _Particle(
+        if child_hash not in new_particles:
+          new_particles[child_hash] = _Particle(
             serialized=child_str, weight=new_weight
           )
         else:
-          new_particles[child_board].weight += new_weight
+          new_particles[child_hash].weight += new_weight
         match_count += 1
 
     if not new_particles:
@@ -331,7 +324,7 @@ class ParticleDeterminizationSampler:
     )
     adjusted_weights = utils.apply_temp(weight_array, temperature=temperature)
 
-    for (board_str, particle), new_weight in zip(
+    for (_, particle), new_weight in zip(
       new_particles.items(), adjusted_weights
     ):
       particle.weight = new_weight
@@ -365,9 +358,7 @@ class ParticleDeterminizationSampler:
         particles = {
           self.game.deserialize_state(
             INITIAL_STATE_SERIALIZED
-          ).all_board_string(): _Particle(
-            serialized=INITIAL_STATE_SERIALIZED, weight=1.0
-          )
+          ).hash(): _Particle(serialized=INITIAL_STATE_SERIALIZED, weight=1.0)
         }
         start_idx = 0
 
@@ -417,14 +408,14 @@ class ParticleDeterminizationSampler:
           logger.debug(
             f"Updating checkpoint at index {idx} with {len(particles)} particles."
           )
-          rec.particles = particles.copy()
+          rec.particles = copy.deepcopy(particles)
 
       if ok and particles:
         if attempt > 0:
           checkpoint_idx = len(self._history) - 1
           self._checkpoint_indices.add(checkpoint_idx)
           rec = self._history[checkpoint_idx]
-          rec.particles = particles.copy()
+          rec.particles = copy.deepcopy(particles)
           logger.debug(
             f"Final checkpoint updated with {len(particles)} particles."
           )

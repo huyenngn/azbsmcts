@@ -123,3 +123,7 @@ class State:
 
   def all_board_string(self) -> str:
     return self._get_board_string(0, 2)
+
+  def hash(self) -> str:
+    """Return a hash of the state."""
+    return f"{self.current_player()}|{self.all_board_string()}"

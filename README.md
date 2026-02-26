@@ -89,12 +89,12 @@ uv run tune \
 
 **Tuned parameters:**
 
-| Parameter | Range       | Description                       |
-| --------- | ----------- | --------------------------------- |
-| `T`       | 6–12        | Belief samples (determinizations) |
-| `S`       | 4–6         | MCTS iterations per move          |
-| `c_puct`  | 0.5–3.0     | PUCT exploration constant         |
-| `lr`      | 2e-4 – 3e-3 | Learning rate                     |
+| Parameter | Range       | Description                      |
+| --------- | ----------- | -------------------------------- |
+| `T`       | 6–12        | MCTS iterations per move         |
+| `S`       | 4–6         | Simulations per sampled particle |
+| `c_puct`  | 0.5–3.0     | PUCT exploration constant        |
+| `lr`      | 2e-4 – 3e-3 | Learning rate                    |
 
 Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
 
