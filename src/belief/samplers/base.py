@@ -11,10 +11,5 @@ class DeterminizationSampler(t.Protocol):
     ...
 
   def sample_with_prior(self) -> tuple[str, float]:
-    """Return (serialized state, prior probability P(γ)).
-
-    The prior reflects how likely this determinization is given the
-    opponent model.  Samplers without an opponent model should return
-    ``P(γ) = 1.0``.
-    """
+    """Return (serialized determinized state, prior probability) tuple."""
     ...

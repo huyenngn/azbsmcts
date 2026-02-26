@@ -107,6 +107,8 @@ class TestResumeHelpers:
       budget=config.TrainBudget(games=10, epochs=2, batch=32),
       lr=0.001,
       sampler=config.SamplerConfig(
+        num_particles=20,
+        matches_per_particle=5,
         rebuild_tries=5,
       ),
     )

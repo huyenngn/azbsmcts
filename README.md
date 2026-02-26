@@ -75,12 +75,14 @@ and search remains stable.
 uv run tune \
   --trials 50 \
   --games 100 \
-  --epochs 2 \
+  --epochs 5 \
   --eval-n 20 \
   --batch 64 \
   --seed 42 \
   --device cuda \
   --rebuild-tries 5 \
+  --num-particles 50 \
+  --matches-per-particle 15 \
   --storage sqlite:///runs/optuna.db \
   --study-name az_explore
 ```
@@ -117,6 +119,8 @@ uv run train \
   --batch 64 \
   --lr 1e-4 \
   --replay-max-examples 50000 \
+  --num-particles 50 \
+  --matches-per-particle 15 \
   --rebuild-tries 5
 ```
 
@@ -167,6 +171,8 @@ uv run eval-match \
   --dirichlet-weight 0.25 \
   --a random \
   --b bsmcts \
+  --num-particles 50 \
+  --matches-per-particle 15 \
   --rebuild-tries 5 \
   --out-json runs/<run_dir>/bsmcts_vs_random.json
 ```
@@ -186,6 +192,8 @@ uv run eval-sweep \
   --c-puct 1.5 \
   --dirichlet-alpha 0.03 \
   --dirichlet-weight 0.25 \
+  --num-particles 50 \
+  --matches-per-particle 15 \
   --rebuild-tries 5
 ```
 

@@ -48,6 +48,10 @@ class ParticleDeterminizationSampler:
     opponent_policy: OpponentPolicy | None = None,
     temperature: float = 1.0,
   ):
+    if num_particles <= 0:
+      raise ValueError("num_particles must be > 0")
+    if matches_per_particle <= 0:
+      raise ValueError("matches_per_particle must be > 0")
     if checkpoint_interval <= 0:
       raise ValueError("checkpoint_interval must be > 0")
     if rebuild_tries <= 0:

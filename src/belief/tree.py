@@ -9,29 +9,19 @@ import numpy as np
 
 from utils import softmax
 
-# ---------------------------------------------------------------------------
-# Per-γ statistics
-# ---------------------------------------------------------------------------
-
 
 @dataclasses.dataclass
 class GammaActionStats:
-  """Statistics for a single (γ, action) pair.
-
-  Stores both:
-  * Running-average reward ``u`` for BS-MCTS (Eq 2).
-  * Sum-of-values ``w`` for PUCT-based backprop (AZBSMCTS).
-  * NN prior ``p`` for PUCT selection (AZBSMCTS).
-  """
+  """Per-action statistics stored inside a determinization."""
 
   n: int = 0
-  u: float = 0.0  # running average reward U(γ, a)  — BS-MCTS
-  w: float = 0.0  # cumulative value W(γ, a)         — AZBSMCTS
-  p: float = 0.0  # NN prior P(a|γ)                  — AZBSMCTS
+  u: float = 0.0  # running average reward (BS-MCTS)
+  w: float = 0.0  # cumulative value (AZBSMCTS)
+  p: float = 0.0  # NN prior (AZBSMCTS)
 
   @property
   def q(self) -> float:
-    """Mean action value Q(γ, a) = W / N."""
+    """Returns sum-based mean value for AZBSMCTS."""
     return 0.0 if self.n == 0 else self.w / self.n
 
 
@@ -39,16 +29,13 @@ class GammaActionStats:
 class GammaStats:
   """Per-determinization statistics stored inside a belief-state node."""
 
-  n: int = 0  # N(γ) – visit count of this determinization
-  prior: float = 1.0  # P(γ) – prior probability (default uniform)
+  n: int = 0  # visit count of this determinization
+  prior: float = 1.0  # prior probability (default uniform)
   actions: dict[int, GammaActionStats] = dataclasses.field(
     default_factory=dict
   )
 
-  # -- helpers ---------------------------------------------------------------
-
   def expected_utility(self) -> float:
-    """U(γ) = Σ_a U(γ,a)·N(γ,a) / Σ_a N(γ,a)  (Eq 5)."""
     num = 0.0
     den = 0
     for a_stat in self.actions.values():
@@ -62,29 +49,16 @@ class GammaStats:
     return self.actions[action]
 
 
-# ---------------------------------------------------------------------------
-# Belief-state node
-# ---------------------------------------------------------------------------
-
-
 @dataclasses.dataclass
 class Node:
-  """A node in the belief-state tree.
-
-  Stores per-γ statistics (``gammas``) used by both BS-MCTS and AZBSMCTS.
-  BS-MCTS uses running-average ``u`` and UCT; AZBSMCTS uses sum-based ``w``
-  with NN priors ``p`` and PUCT.
-  """
+  """A node in the belief-state tree."""
 
   obs_key: str
   player_to_act: int
   is_expanded: bool = False
   legal_actions: list[int] = dataclasses.field(default_factory=list)
 
-  # Per-γ data  (key = serialized determinized state string)
   gammas: dict[str, GammaStats] = dataclasses.field(default_factory=dict)
-
-  # -- per-γ helpers --------------------------------------------------------
 
   def get_or_create_gamma(self, gamma_key: str) -> GammaStats:
     """Get existing γ stats or create a new entry."""
@@ -92,15 +66,8 @@ class Node:
       self.gammas[gamma_key] = GammaStats()
     return self.gammas[gamma_key]
 
-  # -- belief computation (Opponent Guessing, Eq 3-5) -----------------------
-
   def belief_weights(self, lambda_guess: float = 1.0) -> dict[str, float]:
-    """Compute belief weights b_i for all γ ∈ B  (Eq 4).
-
-    b_i = exp(λ · P(γ_i) · U(γ_i)) / Σ_j exp(λ · P(γ_j) · U(γ_j))
-
-    Returns dict mapping gamma_key → b_i.
-    """
+    """Compute belief weights."""
     if not self.gammas:
       return {}
 
@@ -116,10 +83,7 @@ class Node:
     return dict(zip(keys, weights.tolist(), strict=True))
 
   def belief_weighted_u(self, action: int, lambda_guess: float = 1.0) -> float:
-    """U(B, a) = Σ_i  b_i · U(γ_i, a)   (Eq 3).
-
-    Only γ that have stats for *action* contribute.
-    """
+    """Compute belief-weighted utility for a given action."""
     bw = self.belief_weights(lambda_guess)
     if not bw:
       return 0.0
@@ -131,10 +95,7 @@ class Node:
         total += bi * gs.actions[action].u
     return total
 
-  # -- aggregate visit counts -----------------------------------------------
-
   def total_action_visits(self, action: int) -> int:
-    """N(B, a) = Σ_{γ ∈ B} N(γ, a)."""
     total = 0
     for gs in self.gammas.values():
       if action in gs.actions:
@@ -142,13 +103,10 @@ class Node:
     return total
 
   def total_visits(self) -> int:
-    """N(B) = Σ_{γ ∈ B} N(γ)."""
     return sum(gs.n for gs in self.gammas.values())
 
-  # -- aggregate action value (sum-based, for PUCT) -------------------------
-
   def aggregate_q(self, action: int) -> float:
-    """Q(B, a) = Σ_γ W(γ,a) / Σ_γ N(γ,a)  — sum-based mean value."""
+    """Aggregate Q(B, a) across determinizations."""
     total_w = 0.0
     total_n = 0
     for gs in self.gammas.values():
@@ -158,11 +116,7 @@ class Node:
     return 0.0 if total_n == 0 else total_w / total_n
 
   def aggregate_prior(self, action: int) -> float:
-    """Weighted average NN prior P(a) across determinizations.
-
-    P(a) = Σ_γ N(γ) · p(γ,a) / Σ_γ N(γ)   for γ that have *action*.
-    Falls back to simple average if no visits yet.
-    """
+    """Weighted average NN prior P(a) across determinizations."""
     total_p = 0.0
     total_n = 0
     for gs in self.gammas.values():
@@ -179,12 +133,10 @@ class Node:
       return sum(priors) / len(priors) if priors else 0.0
     return total_p / total_n
 
-  # -- selection helpers -----------------------------------------------------
-
   def uct_value(
     self, action: int, c_uct: float, lambda_guess: float = 1.0
   ) -> float:
-    """V(B, a) = U(B, a) + c · √(ln N(B) / N(B, a))  (Eq 1)."""
+    """UCT score for BS-MCTS."""
     nb = self.total_visits()
     nba = self.total_action_visits(action)
     u_ba = self.belief_weighted_u(action, lambda_guess)
@@ -192,7 +144,7 @@ class Node:
     return u_ba + exploration
 
   def puct_value(self, action: int, c_puct: float) -> float:
-    """PUCT score: Q(B,a) + c_puct · P(a) · √(N(B)+1) / (1 + N(B,a))."""
+    """PUCT score for AZBSMCTS."""
     nb = self.total_visits()
     nba = self.total_action_visits(action)
     q = self.aggregate_q(action)
@@ -203,12 +155,6 @@ class Node:
   def opponent_action_probs(
     self, actions: list[int], lambda_predict: float = 1.0
   ) -> list[float]:
-    """Pro(a_i) via Opponent Predicting  (Eq 6).
-
-    Pro(a_i) = exp(λ · U(B_opp, a_i)) / Σ_j exp(λ · U(B_opp, a_j))
-
-    Uses the aggregate belief-weighted U(B, a) for each action.
-    """
     if not actions:
       return []
     logits = np.array(
@@ -217,23 +163,12 @@ class Node:
     )
     return softmax.softmax_np(logits).tolist()
 
-  # -- visit-count helpers ---------------------------------------------------
-
   def get_most_visited_action(self, actions: list[int] | None = None) -> int:
-    """Return action with highest aggregate visit count N(B, a).
-
-    Uses per-γ stats: N(B, a) = Σ_γ N(γ, a).
-    """
     if actions is None:
       actions = self.legal_actions
     if not actions:
       raise ValueError("No actions available")
     return max(actions, key=lambda a: self.total_action_visits(a))
-
-
-# ---------------------------------------------------------------------------
-# Belief tree
-# ---------------------------------------------------------------------------
 
 
 class BeliefTree:

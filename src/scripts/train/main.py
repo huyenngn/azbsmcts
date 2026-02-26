@@ -269,7 +269,7 @@ def main() -> None:
   p.add_argument(
     "--game-params",
     type=str,
-    default='{"board_size": 9, "max_game_length": 162}',
+    default='{"board_size": 5, "max_game_length": 125}',
   )
 
   p.add_argument("--games", type=int, default=50)
@@ -311,6 +311,8 @@ def main() -> None:
     help="Cap replay buffer size (0 = unlimited)",
   )
 
+  p.add_argument("--num-particles", type=int, default=50)
+  p.add_argument("--matches-per-particle", type=int, default=15)
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
@@ -329,7 +331,11 @@ def main() -> None:
     dirichlet_alpha=args.dirichlet_alpha,
     dirichlet_weight=args.dirichlet_weight,
   )
-  sampler_cfg = config.SamplerConfig(rebuild_tries=args.rebuild_tries)
+  sampler_cfg = config.SamplerConfig(
+    num_particles=args.num_particles,
+    matches_per_particle=args.matches_per_particle,
+    rebuild_tries=args.rebuild_tries,
+  )
 
   # Handle run directory creation
   resuming = False

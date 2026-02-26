@@ -177,7 +177,7 @@ def main() -> None:
   p.add_argument("--device", type=str, default="cpu")
 
   p.add_argument("--game", type=str, default="phantom_go")
-  p.add_argument("--game-params", type=str, default='{"board_size": 9}')
+  p.add_argument("--game-params", type=str, default='{"board_size": 5}')
 
   p.add_argument("--n", type=int, default=20)
   p.add_argument("--T", type=int, default=8)
@@ -193,6 +193,8 @@ def main() -> None:
   p.add_argument("--model", type=str, default=None)
   p.add_argument("--out-json", type=str, default="")
 
+  p.add_argument("--num-particles", type=int, default=50)
+  p.add_argument("--matches-per-particle", type=int, default=15)
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
@@ -205,7 +207,11 @@ def main() -> None:
     dirichlet_alpha=args.dirichlet_alpha,
     dirichlet_weight=args.dirichlet_weight,
   )
-  sampler_cfg = config.SamplerConfig(args.rebuild_tries)
+  sampler_cfg = config.SamplerConfig(
+    num_particles=args.num_particles,
+    matches_per_particle=args.matches_per_particle,
+    rebuild_tries=args.rebuild_tries,
+  )
 
   game = openspiel.Game(game_cfg.name, game_cfg.params)
 

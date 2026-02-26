@@ -82,8 +82,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       ]
     ] = []
 
-  # -- NN helpers -----------------------------------------------------------
-
   def _state_tensor_side_to_move(self, state: openspiel.State) -> torch.Tensor:
     """Get observation tensor from current player's perspective."""
     side = state.current_player()
@@ -118,8 +116,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     """Convert side-to-move value to root player's perspective."""
     return value if state.current_player() == self.player_id else -value
 
-  # -- Override _expand: NN priors per (γ, action) --------------------------
-
   def _expand(
     self,
     gamma_key: str,
@@ -128,19 +124,13 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     *,
     add_dirichlet: bool = False,
   ) -> None:
-    """Expand γ inside belief-state B with NN policy priors.
-
-    Initialises per-(γ, action) stats and stores the NN prior ``p``
-    on each ``GammaActionStats``.  If the node hasn't been expanded at
-    all yet (first γ to visit), also sets ``legal_actions``.
-    """
+    """Add legal actions and NN priors if not already present."""
     node.is_expanded = True
     legal = list(gamma_state.legal_actions())
     for a in legal:
       if a not in node.legal_actions:
         node.legal_actions.append(a)
 
-    # NN priors for this determinization
     priors = self._nn_priors(gamma_state)
 
     if add_dirichlet and self.dirichlet_alpha > 0:
@@ -179,22 +169,12 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     batch_mode: bool = False,
     _path: list[tuple[tree.Node, str, int]] | None = None,
   ) -> float | None:
-    """Recursive search on γ through belief node B using PUCT + NN.
-
-    Mirrors ``BSMCTSAgent._search`` but:
-    * Uses PUCT instead of UCT for player-node selection.
-    * Uses NN value instead of rollout for leaf evaluation.
-    * Backpropagates sum-based ``w`` instead of running-average ``u``.
-    * Supports batch mode: queue leaf for deferred NN eval, return None.
-
-    Returns the leaf value from root's perspective, or None if deferred.
-    """
+    """Perform one iteration of MCTS search"""
     if gamma_state.is_terminal():
       return self._terminal_value(gamma_state)
 
     gs = node.get_or_create_gamma(gamma_key)
 
-    # First visit to this node by ANY γ — evaluate with NN
     if node.total_visits() == 0:
       if batch_mode:
         self._pending_leaves.append(
@@ -206,7 +186,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       v = self._nn_value(gamma_state)
       return self._value_root_perspective(gamma_state, v)
 
-    # First visit by THIS γ — expand its per-action stats
     if not gs.actions:
       self._expand(gamma_key, gamma_state, node)
 
@@ -214,7 +193,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
 
     action = self._selection(gamma_state, node)
     if action is None:
-      # No legal action found – fall back to NN value
       return self._nn_value(gamma_state)
 
     # Descend
@@ -244,13 +222,11 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     if v_root is None:
       return None  # deferred
 
-    # Backpropagation: sum-based W(γ, a)
+    # Backpropagation
     a_stat = gs.get_or_create_action(action)
     a_stat.n += 1
     a_stat.w += v_root
     return v_root
-
-  # -- Batch NN evaluation --------------------------------------------------
 
   def _evaluate_pending_leaves(self) -> None:
     """Batch evaluate all pending leaf nodes and backpropagate values."""
@@ -290,7 +266,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       else:
         gs = node.get_or_create_gamma(gamma_key)
         if not gs.actions:
-          # Expand this γ's actions using batch logits
           legal = list(state.legal_actions())
           logits = logits_batch[i]
           mask = np.full(
@@ -316,8 +291,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
 
     self._pending_leaves.clear()
 
-  # -- Visit-count policy vector --------------------------------------------
-
   def _root_visit_policy(
     self, root: tree.Node, temperature: float
   ) -> np.ndarray:
@@ -341,8 +314,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       pi[a] = float(p)
     return pi
 
-  # -- Override select_action: greedy from visit counts ---------------------
-
   def select_action(self, state: openspiel.State) -> int:
     """Select best action (greedy, no exploration noise)."""
     a, _ = self._select_action_impl(
@@ -353,11 +324,7 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
   def select_action_with_pi(
     self, state: openspiel.State
   ) -> tuple[int, np.ndarray]:
-    """Select action with policy vector for training.
-
-    Adds Dirichlet noise at root.  Uses temperature=1.0 for first 20
-    plies, then greedy.
-    """
+    """Select action with exploration noise, return (action, policy vector)."""
     temperature = 1.0 if state.game_length() < 20 else 1e-8
     return self._select_action_impl(
       state, temperature=temperature, add_dirichlet=True
@@ -369,7 +336,7 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     temperature: float,
     add_dirichlet: bool,
   ) -> tuple[int, np.ndarray]:
-    """Core AZBSMCTS action selection: T×S loop with batched NN eval."""
+    """Core AZBSMCTS action selection logic."""
     root_obs = self.obs_key(state, self.player_id)
     root = self.tree.get_or_create(root_obs, state.current_player())
 
@@ -380,7 +347,6 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       gs.prior = gamma_prior
 
       gamma_state = self.game.deserialize_state(gamma_str)
-      # Expand root for this γ with NN priors (+ optional Dirichlet)
       if not gs.actions:
         self._expand(gamma_str, gamma_state, root, add_dirichlet=add_dirichlet)
 

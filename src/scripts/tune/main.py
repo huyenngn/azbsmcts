@@ -24,7 +24,7 @@ def main() -> None:
   parser.add_argument(
     "--game-params",
     type=str,
-    default='{"board_size": 9, "max_game_length": 162}',
+    default='{"board_size": 5, "max_game_length": 125}',
   )
 
   parser.add_argument("--games", type=int, default=30)
@@ -40,6 +40,8 @@ def main() -> None:
   parser.add_argument("--direction", type=str, default="maximize")
 
   parser.add_argument("--rebuild-tries", type=int, default=5)
+  parser.add_argument("--num-particles", type=int, default=50)
+  parser.add_argument("--matches-per-particle", type=int, default=15)
   args = parser.parse_args()
 
   utils.ensure_dir(pathlib.Path("runs"))
@@ -103,7 +105,11 @@ def main() -> None:
       dirichlet_alpha=dirichlet_alpha,
       dirichlet_weight=dirichlet_weight,
     )
-    sampler_cfg = config.SamplerConfig(rebuild_tries=args.rebuild_tries)
+    sampler_cfg = config.SamplerConfig(
+      num_particles=args.num_particles,
+      matches_per_particle=args.matches_per_particle,
+      rebuild_tries=args.rebuild_tries,
+    )
     run_id = f"trial{trial.number:04d}"
 
     # Derive seeds deterministically for each trial

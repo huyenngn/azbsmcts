@@ -4,14 +4,8 @@ import pytest
 
 from belief import tree
 
-# ---------------------------------------------------------------------------
-# GammaActionStats
-# ---------------------------------------------------------------------------
-
 
 class TestGammaActionStats:
-  """Test per-(γ, action) statistics."""
-
   def test_defaults(self) -> None:
     s = tree.GammaActionStats()
     assert s.n == 0
@@ -20,7 +14,6 @@ class TestGammaActionStats:
     assert s.p == 0.0
 
   def test_running_average_update(self) -> None:
-    """Simulate Eq 2: U(γ,a) ← U(γ,a) + (R − U(γ,a)) / N(γ,a)."""
     s = tree.GammaActionStats()
     rewards = [1.0, 0.0, 0.5]
     for r in rewards:
@@ -42,11 +35,6 @@ class TestGammaActionStats:
     assert s.q == -2.0
 
 
-# ---------------------------------------------------------------------------
-# GammaStats
-# ---------------------------------------------------------------------------
-
-
 class TestGammaStats:
   """Test per-determinization statistics."""
 
@@ -61,7 +49,6 @@ class TestGammaStats:
     assert gs.expected_utility() == 0.0
 
   def test_expected_utility(self) -> None:
-    """U(γ) = Σ U(γ,a)·N(γ,a) / Σ N(γ,a) (Eq 5)."""
     gs = tree.GammaStats()
     gs.actions[0] = tree.GammaActionStats(n=2, u=1.0)  # contributes 2*1.0
     gs.actions[1] = tree.GammaActionStats(n=3, u=0.5)  # contributes 3*0.5
@@ -77,11 +64,6 @@ class TestGammaStats:
     assert gs.get_or_create_action(42) is a
 
 
-# ---------------------------------------------------------------------------
-# Node
-# ---------------------------------------------------------------------------
-
-
 class TestNode:
   """Test belief-state Node."""
 
@@ -92,8 +74,6 @@ class TestNode:
     assert node.is_expanded is False
     assert len(node.gammas) == 0
 
-  # -- per-γ helpers --------------------------------------------------------
-
   def test_get_or_create_gamma(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=0)
     gs = node.get_or_create_gamma("g1")
@@ -101,14 +81,11 @@ class TestNode:
     assert node.get_or_create_gamma("g1") is gs
     assert len(node.gammas) == 1
 
-  # -- belief weights (Eq 4) -----------------------------------------------
-
   def test_belief_weights_empty(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=0)
     assert node.belief_weights() == {}
 
   def test_belief_weights_uniform_when_no_data(self) -> None:
-    """With no action stats, all U(γ)=0 → uniform beliefs."""
     node = tree.Node(obs_key="x", player_to_act=0)
     node.get_or_create_gamma("g1")
     node.get_or_create_gamma("g2")
@@ -117,17 +94,14 @@ class TestNode:
     assert bw["g2"] == pytest.approx(0.5)
 
   def test_belief_weights_sharp_with_high_lambda(self) -> None:
-    """Higher λ → sharper beliefs toward the γ with higher U(γ)."""
     node = tree.Node(obs_key="x", player_to_act=0)
     gs1 = node.get_or_create_gamma("g1")
-    gs1.actions[0] = tree.GammaActionStats(n=5, u=1.0)  # U(γ1) = 1.0
+    gs1.actions[0] = tree.GammaActionStats(n=5, u=1.0)
     gs2 = node.get_or_create_gamma("g2")
-    gs2.actions[0] = tree.GammaActionStats(n=5, u=0.0)  # U(γ2) = 0.0
+    gs2.actions[0] = tree.GammaActionStats(n=5, u=0.0)
 
     bw = node.belief_weights(lambda_guess=10.0)
     assert bw["g1"] > bw["g2"]
-
-  # -- belief-weighted U(B,a) (Eq 3) ---------------------------------------
 
   def test_belief_weighted_u_empty(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=0)
@@ -137,22 +111,16 @@ class TestNode:
     node = tree.Node(obs_key="x", player_to_act=0)
     gs = node.get_or_create_gamma("g1")
     gs.actions[0] = tree.GammaActionStats(n=3, u=0.8)
-    # Only one γ → b_1 = 1.0, so U(B, 0) = 0.8
     assert node.belief_weighted_u(0) == pytest.approx(0.8)
 
   def test_belief_weighted_u_two_gammas(self) -> None:
-    """U(B,a) = Σ b_i · U(γ_i, a)."""
     node = tree.Node(obs_key="x", player_to_act=0)
-    # Both γ have same expected utility → uniform beliefs
     gs1 = node.get_or_create_gamma("g1")
     gs1.actions[0] = tree.GammaActionStats(n=2, u=1.0)
     gs2 = node.get_or_create_gamma("g2")
     gs2.actions[0] = tree.GammaActionStats(n=2, u=0.0)
-    # With λ=0 (force uniform): U(B,0) = 0.5*1.0 + 0.5*0.0 = 0.5
     u = node.belief_weighted_u(0, lambda_guess=0.0)
     assert u == pytest.approx(0.5)
-
-  # -- aggregate visits -----------------------------------------------------
 
   def test_total_action_visits(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=0)
@@ -168,8 +136,6 @@ class TestNode:
     node.get_or_create_gamma("g1").n = 10
     node.get_or_create_gamma("g2").n = 7
     assert node.total_visits() == 17
-
-  # -- aggregate Q and prior (for PUCT) ------------------------------------
 
   def test_aggregate_q_no_data(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=0)
@@ -200,7 +166,6 @@ class TestNode:
     assert node.aggregate_prior(0) == pytest.approx(0.7)
 
   def test_aggregate_prior_no_visits_simple_average(self) -> None:
-    """When all N(γ)=0, falls back to simple average of priors."""
     node = tree.Node(obs_key="x", player_to_act=0)
     gs1 = node.get_or_create_gamma("g1")
     gs1.n = 0
@@ -209,8 +174,6 @@ class TestNode:
     gs2.n = 0
     gs2.actions[0] = tree.GammaActionStats(p=0.4)
     assert node.aggregate_prior(0) == pytest.approx(0.5)
-
-  # -- UCT value (Eq 1) ----------------------------------------------------
 
   def test_uct_value_explores_unvisited(self) -> None:
     """Action with 0 visits should have high UCT score (exploration)."""
@@ -223,8 +186,6 @@ class TestNode:
     v0 = node.uct_value(0, c_uct=1.4)
     v1 = node.uct_value(1, c_uct=1.4)
     assert v1 > v0  # Unvisited action should be preferred
-
-  # -- PUCT value -----------------------------------------------------------
 
   def test_puct_value_prefers_high_prior(self) -> None:
     """PUCT should prefer action with higher NN prior when both unvisited."""
@@ -251,8 +212,6 @@ class TestNode:
     # Action 1 has fewer visits → higher exploration bonus
     assert v1 > v0
 
-  # -- Opponent Predicting (Eq 6) ------------------------------------------
-
   def test_opponent_action_probs_uniform_no_data(self) -> None:
     """Without data, all actions should be ~uniform."""
     node = tree.Node(obs_key="x", player_to_act=1)
@@ -266,8 +225,6 @@ class TestNode:
   def test_opponent_action_probs_empty(self) -> None:
     node = tree.Node(obs_key="x", player_to_act=1)
     assert node.opponent_action_probs([]) == []
-
-  # -- get_most_visited_action (per-γ stats) --------------------------------
 
   def test_get_most_visited_action_basic(self) -> None:
     node = tree.Node(obs_key="test", player_to_act=0)
@@ -288,7 +245,6 @@ class TestNode:
     assert node.get_most_visited_action(actions=[0, 2]) == 0
 
   def test_get_most_visited_action_aggregates_gammas(self) -> None:
-    """Visits from multiple γ should be summed."""
     node = tree.Node(obs_key="test", player_to_act=0)
     node.legal_actions = [0, 1]
     gs1 = node.get_or_create_gamma("g1")
@@ -304,11 +260,6 @@ class TestNode:
     node = tree.Node(obs_key="test", player_to_act=0)
     with pytest.raises(ValueError):
       node.get_most_visited_action()
-
-
-# ---------------------------------------------------------------------------
-# BeliefTree
-# ---------------------------------------------------------------------------
 
 
 class TestBeliefTree:
