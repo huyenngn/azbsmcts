@@ -363,13 +363,15 @@ def main() -> None:
   p.add_argument("--device", type=str, default="cpu")
 
   # Search (API defaults intentionally small)
-  p.add_argument("--T", type=int, default=4)
-  p.add_argument("--S", type=int, default=2)
+  p.add_argument("--T", type=int, default=8)
+  p.add_argument("--S", type=int, default=4)
   p.add_argument("--c-puct", type=float, default=1.5)
   p.add_argument("--dirichlet-alpha", type=float, default=0.0)
   p.add_argument("--dirichlet-weight", type=float, default=0.0)
 
   # Particle sampler
+  p.add_argument("--num-particles", type=int, default=50)
+  p.add_argument("--matches-per-particle", type=int, default=15)
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   # Model path for azbsmcts
@@ -398,6 +400,8 @@ def main() -> None:
       dirichlet_weight=args.dirichlet_weight,
     ),
     sampler_cfg=config.SamplerConfig(
+      num_particles=args.num_particles,
+      matches_per_particle=args.matches_per_particle,
       rebuild_tries=args.rebuild_tries,
     ),
     model_path=pathlib.Path(args.model_path),

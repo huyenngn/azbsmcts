@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button } from '@/components/ui/button'
-import { ref } from 'vue'
+import { Button } from "@/components/ui/button"
+import { ref } from "vue"
 import {
   Select,
   SelectContent,
@@ -8,12 +8,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { PlayerColor } from '@/lib/types'
+} from "@/components/ui/select"
+import { PlayerColor } from "@/lib/types"
 
 const boardSize = ref(5)
 const playerId = ref(PlayerColor.Black)
-const opponentAi = ref('azbsmcts')
+const opponentAi = ref("azbsmcts")
 </script>
 
 <template>
@@ -66,6 +66,7 @@ const opponentAi = ref('azbsmcts')
                   <SelectGroup>
                     <SelectItem :value="3"> 3x3 </SelectItem>
                     <SelectItem :value="5"> 5x5 </SelectItem>
+                    <SelectItem :value="7"> 7x7 </SelectItem>
                     <SelectItem :value="9"> 9x9 </SelectItem>
                   </SelectGroup>
                 </SelectContent>

@@ -40,6 +40,8 @@ class ParticleDeterminizationSampler:
     self,
     game: openspiel.Game,
     ai_id: int,
+    num_particles: int = 50,
+    matches_per_particle: int = 15,
     checkpoint_interval: int = 5,
     rebuild_tries: int = 5,
     seed: int = 0,
@@ -53,10 +55,8 @@ class ParticleDeterminizationSampler:
 
     self.game = game
     self.ai_id = ai_id
-    self.min_num_particles = self.game.num_distinct_actions() * 2
-    self.min_matches_per_particle = max(
-      self.game.num_distinct_actions() // 2, 1
-    )
+    self.num_particles = num_particles
+    self.matches_per_particle = matches_per_particle
     self.checkpoint_interval = checkpoint_interval
     self.rebuild_tries = rebuild_tries
     self.rng = random.Random(seed)
@@ -237,9 +237,9 @@ class ParticleDeterminizationSampler:
     if particles is None:
       particles = self._particles
     if matches_per_particle is None:
-      matches_per_particle = self.min_matches_per_particle
+      matches_per_particle = self.matches_per_particle
     if num_particles is None:
-      num_particles = self.min_num_particles
+      num_particles = self.num_particles
 
     particle_data: list[tuple[str, list[int], float]] = []
     deserialized_states: list[openspiel.State] = []
@@ -374,11 +374,9 @@ class ParticleDeterminizationSampler:
         1.0 + (len(self._history) - start_idx) / self.game.max_game_length()
       )
       attempt_scale = 1.0 + attempt / self.rebuild_tries
-      num_particles = int(
-        self.min_num_particles * history_scale * attempt_scale
-      )
+      num_particles = int(self.num_particles * history_scale * attempt_scale)
       matches_per_particle = min(
-        int(self.min_matches_per_particle * history_scale * attempt_scale),
+        int(self.matches_per_particle * history_scale * attempt_scale),
         self.game.num_distinct_actions(),
       )
       temperature = self.temperature * history_scale * attempt_scale

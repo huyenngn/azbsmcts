@@ -89,8 +89,8 @@ uv run tune \
 
 | Parameter | Range       | Description                       |
 | --------- | ----------- | --------------------------------- |
-| `T`       | 6–12        | MCTS iterations per move          |
-| `S`       | 4–6         | Belief samples (determinizations) |
+| `T`       | 6–12        | Belief samples (determinizations) |
+| `S`       | 4–6         | MCTS iterations per move          |
 | `c_puct`  | 0.5–3.0     | PUCT exploration constant         |
 | `lr`      | 2e-4 – 3e-3 | Learning rate                     |
 
