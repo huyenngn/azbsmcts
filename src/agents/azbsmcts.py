@@ -346,11 +346,12 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       gs = root.get_or_create_gamma(gamma_str)
       gs.prior = gamma_prior
 
-      gamma_state = self.game.deserialize_state(gamma_str)
       if not gs.actions:
+        gamma_state = self.game.deserialize_state(gamma_str)
         self._expand(gamma_str, gamma_state, root, add_dirichlet=add_dirichlet)
 
       for _ in range(self.S):
+        gamma_state = self.game.deserialize_state(gamma_str)
         self._search(gamma_str, gamma_state, root, batch_mode=True)
 
       self._evaluate_pending_leaves()

@@ -364,7 +364,7 @@ def main() -> None:
 
   # Search (API defaults intentionally small)
   p.add_argument("--T", type=int, default=8)
-  p.add_argument("--S", type=int, default=4)
+  p.add_argument("--S", type=int, default=20)
   p.add_argument("--c-puct", type=float, default=1.5)
   p.add_argument("--dirichlet-alpha", type=float, default=0.0)
   p.add_argument("--dirichlet-weight", type=float, default=0.0)
