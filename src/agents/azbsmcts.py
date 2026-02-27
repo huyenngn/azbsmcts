@@ -359,6 +359,9 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     pi = self._root_visit_policy(root, temperature=float(temperature))
 
     legal = state.legal_actions()
+    if not legal:
+      raise ValueError("No legal actions available")
+
     probs = np.array([pi[a] for a in legal], dtype=np.float32)
 
     total = float(np.sum(probs))
@@ -367,15 +370,5 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       return int(best_a), pi
 
     probs /= total
-    r = self.rng.random()
-    cum = 0.0
-    action = 0
-    for a in range(self.game.num_distinct_actions()):
-      pa = float(probs[a])
-      if pa <= 0.0:
-        continue
-      cum += pa
-      if r <= cum:
-        action = a
-        break
+    action = self.rng.choices(legal, weights=probs.tolist(), k=1)[0]
     return int(action), pi

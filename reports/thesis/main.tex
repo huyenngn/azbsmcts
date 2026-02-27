@@ -98,24 +98,23 @@
 
 \tableofcontents
 
+\newpage
 
 \section{Introduction}
 
+Board games are popular domains for artificial intelligence (AI) research because
+they provide controlled environments with clear rules and objectives.
+In recent years, learning-based approaches have achieved great success in games with perfect
+information, where all players can observe the full game state at any given time.
+One example is AlphaZero, which combines deep neural networks with
+Monte Carlo Tree Search (MCTS) and has reached superhuman performance in games
+like Chess, Shogi, and Go \cite{Silver2017alphazero}.
 
-Games have long been used as testbeds for artificial intelligence research because
-they provide controlled environments with clear rules and objectives. In recent years,
-learning-based approaches have achieved remarkable success in games with perfect
-information, where all players can observe the full game state at all times.
-A prominent example is AlphaZero, which combines deep neural networks with
-Monte Carlo Tree Search (MCTS) and has reached superhuman performance in games such
-as Go, Chess, and Shogi.
+Games with imperfect information, however, present additional challenges.
+In these games, players do not have access to the full game state and must make decisions based on partial observations.
+This uncertainty requires agents to reason over multiple possible hidden states of the game, which can lead to fundamentally different strategic considerations compared to perfect information games.
+It remains a challenge for AI methods to effectively handle this uncertainty.
 
-However, many real-world decision-making problems do not have this property.
-Instead, they involve imperfect information: players must act without full knowledge
-of the current state of the environment or the actions taken by other agents. In such
-settings, uncertainty is not an implementation detail but a fundamental part of the
-problem. Reasoning under uncertainty is therefore a central challenge for artificial
-intelligence systems.
 
 This thesis studies imperfect information games through the lens of Phantom Go, a
 variant of the game of Go in which players cannot see the opponent's stones on the

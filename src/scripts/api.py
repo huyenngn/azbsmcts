@@ -29,9 +29,9 @@ from scripts.common import agent_factory, config, seeding
 from utils import utils
 
 DEMO_MODEL_URL = (
-  "https://github.com/huyenngn/azbsmcts/releases/download/demo-model/model.pt"
+  "https://github.com/huyenngn/azbsmcts/releases/download/latest/demo_5x5.pt"
 )
-DEFAULT_DEMO_MODEL_PATH = pathlib.Path("models/demo_model.pt")
+DEFAULT_DEMO_MODEL_PATH = pathlib.Path("models/demo_5x5.pt")
 
 logger = logging.getLogger("phantom_go_api")
 
