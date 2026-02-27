@@ -47,6 +47,7 @@ class ParticleDeterminizationSampler:
     seed: int = 0,
     opponent_policy: OpponentPolicy | None = None,
     temperature: float = 1.0,
+    checkpoint_interval: int = 5,
   ):
     if num_particles <= 0:
       raise ValueError("num_particles must be > 0")
@@ -63,6 +64,7 @@ class ParticleDeterminizationSampler:
     self.rng = random.Random(seed)
     self.opponent_policy = opponent_policy
     self.temperature = temperature
+    self.checkpoint_interval = checkpoint_interval
     self._history: list[_StepRecord] = []
     self._particles: dict[str, _Particle] = {}
     self._last_valid_sample: tuple[str, float] = (
@@ -127,7 +129,7 @@ class ParticleDeterminizationSampler:
       self._rebuild_particles()
 
     if not self._particles:
-      logger.warning(
+      logger.debug(
         "Particle sampler belief collapsed with empty particles after "
         "rebuild; falling back to last valid sample."
       )
@@ -402,12 +404,18 @@ class ParticleDeterminizationSampler:
             temperature=temperature,
           )
 
-        if idx in self._checkpoint_indices and (
-          not rec.particles or len(rec.particles) < len(particles)
+        if (
+          idx != 0
+          and (
+            idx in self._checkpoint_indices
+            or idx % self.checkpoint_interval == 0
+          )
+          and (not rec.particles or len(rec.particles) < len(particles))
         ):
           logger.debug(
             f"Updating checkpoint at index {idx} with {len(particles)} particles."
           )
+          self._checkpoint_indices.add(idx)
           rec.particles = copy.deepcopy(particles)
 
       if ok and particles:
