@@ -534,14 +534,14 @@ def main() -> None:
   # Try to resume if requested
   if args.resume:
     latest_ckpt, latest_ckpt_games = find_latest_checkpoint(checkpoints_dir)
-    replay_data: dict | None = None
+    replay_data = None
     replay_games = 0
     if replay_path.exists():
       print(f"[resume] Loading replay buffer: {replay_path}")
       replay_data = torch.load(
         str(replay_path), map_location="cpu", weights_only=False
       )
-      replay_games_raw = replay_data.get("games_played")  # type: ignore
+      replay_games_raw = replay_data.get("games_played")
       if isinstance(replay_games_raw, int) and replay_games_raw >= 0:
         replay_games = replay_games_raw
       else:
