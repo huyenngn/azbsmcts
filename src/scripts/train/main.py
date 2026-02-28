@@ -137,6 +137,109 @@ def self_play(
   return examples, p0_returns
 
 
+def checkpoint_path_for_games(
+  checkpoints_dir: pathlib.Path, games_played: int
+) -> pathlib.Path:
+  return checkpoints_dir / f"checkpoint_games_{games_played:05d}.pt"
+
+
+def atomic_torch_save(payload: object, target_path: pathlib.Path) -> None:
+  """Atomic save for torch payloads via temp file + rename."""
+  tmp_path = target_path.with_name(f"{target_path.name}.tmp")
+  torch.save(payload, str(tmp_path))
+  tmp_path.replace(target_path)
+
+
+def metrics_row_count(metrics_path: pathlib.Path) -> int:
+  if not metrics_path.exists():
+    return 0
+  return len(io.read_jsonl(metrics_path))
+
+
+def trim_metrics_to_rows(metrics_path: pathlib.Path, keep_rows: int) -> None:
+  """Keep first N JSONL rows and drop the rest."""
+  if keep_rows < 0:
+    raise ValueError("keep_rows must be >= 0")
+
+  if keep_rows == 0:
+    metrics_path.unlink(missing_ok=True)
+    return
+
+  if not metrics_path.exists():
+    return
+
+  rows = io.read_jsonl(metrics_path)
+  if len(rows) <= keep_rows:
+    return
+
+  io.write_jsonl(metrics_path, rows[:keep_rows])
+
+
+def training_iterations_for_games(games_played: int, interval: int) -> int:
+  if interval <= 0:
+    raise ValueError("interval must be > 0")
+  if games_played <= 0:
+    return 0
+  return (games_played + interval - 1) // interval
+
+
+def expected_metrics_rows(
+  *, games_played: int, epochs_per_iteration: int, interval: int
+) -> int:
+  return (
+    training_iterations_for_games(games_played, interval)
+    * epochs_per_iteration
+  )
+
+
+def write_resume_state(
+  resume_state_path: pathlib.Path,
+  *,
+  games_played: int,
+  metrics_rows: int,
+) -> None:
+  payload = {
+    "version": 1,
+    "games_played": games_played,
+    "metrics_rows": metrics_rows,
+  }
+  tmp_path = resume_state_path.with_name(f"{resume_state_path.name}.tmp")
+  io.write_json(tmp_path, payload)
+  tmp_path.replace(resume_state_path)
+
+
+def load_resume_state(
+  resume_state_path: pathlib.Path,
+) -> dict[str, int] | None:
+  if not resume_state_path.exists():
+    return None
+
+  try:
+    payload = io.read_json(resume_state_path)
+  except Exception as exc:
+    print(
+      f"[resume] Warning: failed to read {resume_state_path}: {exc}. "
+      "Ignoring resume state."
+    )
+    return None
+
+  games_played = payload.get("games_played")
+  metrics_rows = payload.get("metrics_rows", 0)
+  if (
+    not isinstance(games_played, int)
+    or games_played < 0
+    or not isinstance(metrics_rows, int)
+    or metrics_rows < 0
+  ):
+    print(
+      f"[resume] Warning: invalid resume state in {resume_state_path}. "
+      "Ignoring resume state."
+    )
+    return None
+
+  return {"games_played": games_played, "metrics_rows": metrics_rows}
+
+
 def train_net(
   *,
   net: nets.TinyPolicyValueNet,
@@ -164,7 +267,7 @@ def train_net(
   z_t = torch.from_numpy(z).to(device)
 
   n = obs.shape[0]
-  metrics_path.unlink(missing_ok=True)
+  epoch_offset = metrics_row_count(metrics_path)
 
   for ep in range(epochs):
     idx = rng.permutation(n)
@@ -193,7 +296,7 @@ def train_net(
       batches += 1
 
     rec = {
-      "epoch": ep + 1,
+      "epoch": epoch_offset + ep + 1,
       "loss": total_loss / batches,
       "policy_loss": total_ploss / batches,
       "value_loss": total_vloss / batches,
@@ -411,6 +514,8 @@ def main() -> None:
   # Checkpoints directory
   checkpoints_dir = run.run_dir / "checkpoints"
   utils.ensure_dir(checkpoints_dir)
+  replay_path = run.run_dir / "replay.pt"
+  resume_state_path = run.run_dir / "resume_state.json"
 
   # Initialize training state
   all_examples: list[Example] = []
@@ -419,63 +524,167 @@ def main() -> None:
   checkpoint_idx = 0
   optimizer_state: dict | None = None
 
-  # Try to resume if requested
-  if args.resume:
-    latest_ckpt, ckpt_games = find_latest_checkpoint(checkpoints_dir)
-    replay_path = run.run_dir / "replay.pt"
-
-    if latest_ckpt is not None:
-      # Load checkpoint weights
-      print(f"[resume] Loading checkpoint: {latest_ckpt}")
-      net.load_state_dict(
-        torch.load(
-          str(latest_ckpt),
-          map_location=cfg.device,
-          weights_only=True,
-        )
-      )
-
-      # Load replay buffer if it exists
-      if replay_path.exists():
-        print(f"[resume] Loading replay buffer: {replay_path}")
-        replay_data = torch.load(
-          str(replay_path), map_location="cpu", weights_only=False
-        )
-
-        games_played = replay_data["games_played"]
-        optimizer_state = replay_data.get("optimizer_state")
-
-        # Reconstruct examples from saved data
-        saved_examples = replay_data["examples"]
-        for ex_data in saved_examples:
-          all_examples.append(
-            Example(
-              obs=ex_data["obs"],
-              pi=ex_data["pi"],
-              z=ex_data["z"],
-            )
-          )
-
-        all_p0rets = replay_data["p0rets"]
-
-        print(
-          f"[resume] Resumed from games={games_played}, "
-          f"examples={len(all_examples)}, "
-          f"optimizer_state={'loaded' if optimizer_state else 'none'}"
-        )
-      else:
-        print(
-          "[resume] Warning: No replay.pt found, starting from checkpoint weights only"
-        )
-    else:
-      print("[resume] No checkpoints found, starting fresh")
-
   # Interleaved self-play and training (like real AlphaZero)
   interval = (
     args.checkpoint_interval
     if args.checkpoint_interval > 0
     else cfg.budget.games
   )
+
+  # Try to resume if requested
+  if args.resume:
+    latest_ckpt, latest_ckpt_games = find_latest_checkpoint(checkpoints_dir)
+    replay_data: dict | None = None
+    replay_games = 0
+    if replay_path.exists():
+      print(f"[resume] Loading replay buffer: {replay_path}")
+      replay_data = torch.load(
+        str(replay_path), map_location="cpu", weights_only=False
+      )
+      replay_games_raw = replay_data.get("games_played")  # type: ignore
+      if isinstance(replay_games_raw, int) and replay_games_raw >= 0:
+        replay_games = replay_games_raw
+      else:
+        print(
+          "[resume] Warning: replay.pt has invalid games_played; "
+          "ignoring replay buffer"
+        )
+        replay_data = None
+
+    target_ckpt: pathlib.Path | None = None
+    target_games = 0
+    use_replay = False
+
+    # Preferred path: resume from a committed, fully-synced snapshot.
+    committed_state = load_resume_state(resume_state_path)
+    committed_used = False
+    if committed_state is not None:
+      target_games = committed_state["games_played"]
+      target_ckpt = (
+        checkpoint_path_for_games(checkpoints_dir, target_games)
+        if target_games > 0
+        else None
+      )
+      if target_games > 0 and (
+        target_ckpt is None or not target_ckpt.exists()
+      ):
+        print(
+          f"[resume] Warning: committed checkpoint for games={target_games} "
+          f"is missing ({target_ckpt}). Falling back to legacy resume."
+        )
+      else:
+        committed_used = True
+        use_replay = replay_data is not None and replay_games == target_games
+        if replay_data is not None and not use_replay:
+          print(
+            "[resume] Warning: replay.pt does not match committed snapshot; "
+            "ignoring replay buffer"
+          )
+        trim_metrics_to_rows(
+          run.train_metrics_path, committed_state["metrics_rows"]
+        )
+        print(
+          f"[resume] Using committed snapshot at games={target_games} "
+          f"(metrics_rows={committed_state['metrics_rows']})"
+        )
+
+    # Backward-compatible fallback for runs without resume_state.json.
+    if not committed_used:
+      if latest_ckpt is not None and replay_data is not None:
+        if replay_games == latest_ckpt_games:
+          target_ckpt = latest_ckpt
+          target_games = latest_ckpt_games
+          use_replay = True
+        elif replay_games < latest_ckpt_games:
+          aligned_ckpt = checkpoint_path_for_games(
+            checkpoints_dir, replay_games
+          )
+          if replay_games > 0 and aligned_ckpt.exists():
+            target_ckpt = aligned_ckpt
+            target_games = replay_games
+            use_replay = True
+            print(
+              "[resume] Detected newer checkpoint than replay; "
+              f"using aligned snapshot at games={replay_games}"
+            )
+          else:
+            target_ckpt = latest_ckpt
+            target_games = latest_ckpt_games
+            use_replay = False
+            print(
+              "[resume] Warning: replay.pt is stale and no aligned checkpoint "
+              "was found; resuming from checkpoint only"
+            )
+        else:
+          target_ckpt = latest_ckpt
+          target_games = latest_ckpt_games
+          use_replay = False
+          print(
+            "[resume] Warning: replay.pt is ahead of latest checkpoint; "
+            "ignoring replay buffer"
+          )
+      elif latest_ckpt is not None:
+        target_ckpt = latest_ckpt
+        target_games = latest_ckpt_games
+      elif replay_data is not None:
+        print(
+          "[resume] Warning: replay.pt exists but no checkpoint found; "
+          "starting fresh"
+        )
+      else:
+        print("[resume] No checkpoints found, starting fresh")
+
+      trim_metrics_to_rows(
+        run.train_metrics_path,
+        expected_metrics_rows(
+          games_played=target_games,
+          epochs_per_iteration=cfg.budget.epochs,
+          interval=interval,
+        ),
+      )
+
+    if target_ckpt is not None:
+      print(f"[resume] Loading checkpoint: {target_ckpt}")
+      net.load_state_dict(
+        torch.load(
+          str(target_ckpt),
+          map_location=cfg.device,
+          weights_only=True,
+        )
+      )
+
+    games_played = target_games
+
+    if use_replay and replay_data is not None:
+      optimizer_state = replay_data.get("optimizer_state")
+
+      # Reconstruct examples from saved data
+      saved_examples = replay_data["examples"]
+      for ex_data in saved_examples:
+        all_examples.append(
+          Example(
+            obs=ex_data["obs"],
+            pi=ex_data["pi"],
+            z=ex_data["z"],
+          )
+        )
+
+      all_p0rets = replay_data["p0rets"]
+
+      print(
+        f"[resume] Resumed from games={games_played}, "
+        f"examples={len(all_examples)}, "
+        f"optimizer_state={'loaded' if optimizer_state else 'none'}"
+      )
+    elif replay_data is not None:
+      print(
+        "[resume] Continuing from checkpoint without replay buffer "
+        "(state mismatch)"
+      )
+  else:
+    # Fresh run: clear previous metrics and initialize commit state.
+    run.train_metrics_path.unlink(missing_ok=True)
+    write_resume_state(resume_state_path, games_played=0, metrics_rows=0)
 
   while games_played < cfg.budget.games:
     # Determine how many games to play this iteration
@@ -535,15 +744,12 @@ def main() -> None:
 
     # Save checkpoint after this training iteration
     if args.checkpoint_interval > 0 or games_played == cfg.budget.games:
-      ckpt_path = checkpoints_dir / f"checkpoint_games_{games_played:05d}.pt"
-      torch.save(net.state_dict(), str(ckpt_path))
+      ckpt_path = checkpoint_path_for_games(checkpoints_dir, games_played)
+      atomic_torch_save(net.state_dict(), ckpt_path)
       print(f"checkpoint: {ckpt_path}")
       checkpoint_idx += 1
 
       # Save replay buffer atomically
-      replay_path = run.run_dir / "replay.pt"
-      replay_tmp_path = run.run_dir / "replay.tmp.pt"
-
       # Convert examples to serializable format
       examples_data = [
         {"obs": ex.obs, "pi": ex.pi, "z": ex.z} for ex in all_examples
@@ -556,9 +762,15 @@ def main() -> None:
         "optimizer_state": optimizer_state,
       }
 
-      torch.save(replay_data, str(replay_tmp_path))
-      replay_tmp_path.replace(replay_path)
+      atomic_torch_save(replay_data, replay_path)
       print(f"replay buffer: {replay_path}")
+
+      write_resume_state(
+        resume_state_path,
+        games_played=games_played,
+        metrics_rows=metrics_row_count(run.train_metrics_path),
+      )
+      print(f"resume state: {resume_state_path}")
 
   # Save final model as canonical checkpoint
   torch.save(net.state_dict(), str(run.model_path))

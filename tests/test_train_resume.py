@@ -269,6 +269,116 @@ class TestTrainNetOptimizerState:
     assert opt_state_2 is not None
 
 
+class TestTrainMetricsPersistence:
+  """Tests for train_metrics.jsonl append/trim behavior."""
+
+  def test_train_net_appends_metrics_across_calls(
+    self, temp_run_dir: pathlib.Path
+  ) -> None:
+    """Epoch numbering should continue when train_net is called repeatedly."""
+    import numpy as np
+
+    import nets
+    import openspiel
+
+    game = openspiel.Game("tic_tac_toe")
+    net = nets.TinyPolicyValueNet(
+      obs_size=game.observation_tensor_size(),
+      num_actions=game.num_distinct_actions(),
+    )
+
+    examples = [
+      main.Example(
+        obs=np.zeros(game.observation_tensor_size(), dtype=np.float32),
+        pi=np.ones(game.num_distinct_actions(), dtype=np.float32)
+        / game.num_distinct_actions(),
+        z=0.0,
+      )
+      for _ in range(10)
+    ]
+
+    metrics_path = temp_run_dir / "metrics.jsonl"
+
+    main.train_net(
+      net=net,
+      examples=examples,
+      epochs=1,
+      batch_size=4,
+      lr=0.001,
+      device="cpu",
+      seed=42,
+      metrics_path=metrics_path,
+    )
+
+    main.train_net(
+      net=net,
+      examples=examples,
+      epochs=1,
+      batch_size=4,
+      lr=0.001,
+      device="cpu",
+      seed=43,
+      metrics_path=metrics_path,
+    )
+
+    rows = io.read_jsonl(metrics_path)
+    assert len(rows) == 2
+    assert rows[0]["epoch"] == 1
+    assert rows[1]["epoch"] == 2
+
+  def test_trim_metrics_to_rows(self, temp_run_dir: pathlib.Path) -> None:
+    """Should preserve only committed metric rows after rollback."""
+    metrics_path = temp_run_dir / "metrics.jsonl"
+    io.write_jsonl(
+      metrics_path,
+      (
+        {
+          "epoch": i + 1,
+          "loss": float(i),
+          "policy_loss": float(i),
+          "value_loss": float(i),
+        }
+        for i in range(5)
+      ),
+    )
+
+    main.trim_metrics_to_rows(metrics_path, keep_rows=3)
+    rows = io.read_jsonl(metrics_path)
+    assert len(rows) == 3
+    assert rows[-1]["epoch"] == 3
+
+    main.trim_metrics_to_rows(metrics_path, keep_rows=0)
+    assert not metrics_path.exists()
+
+
+class TestResumeState:
+  """Tests for persisted committed snapshot metadata."""
+
+  def test_resume_state_roundtrip(
+    self, temp_run_dir: pathlib.Path
+  ) -> None:
+    """Should write/read committed resume metadata losslessly."""
+    state_path = temp_run_dir / "resume_state.json"
+    main.write_resume_state(
+      state_path, games_played=15, metrics_rows=25
+    )
+
+    loaded = main.load_resume_state(state_path)
+    assert loaded is not None
+    assert loaded["games_played"] == 15
+    assert loaded["metrics_rows"] == 25
+
+  def test_resume_state_invalid_payload_returns_none(
+    self, temp_run_dir: pathlib.Path
+  ) -> None:
+    """Invalid resume state should be ignored safely."""
+    state_path = temp_run_dir / "resume_state.json"
+    io.write_json(state_path, {"games_played": "bad", "metrics_rows": 3})
+
+    loaded = main.load_resume_state(state_path)
+    assert loaded is None
+
+
 class TestReplayBufferTruncation:
   """Tests for replay buffer truncation logic."""
 

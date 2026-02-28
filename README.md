@@ -133,10 +133,11 @@ Training uses **interleaved self-play and learning** (like AlphaZero):
 Each training run creates a directory under `runs/` containing:
 
 - `config.json` – full configuration and reproducibility fingerprint
-- `train_metrics.jsonl` – per-iteration training losses
+- `train_metrics.jsonl` – per-epoch training losses (appended across the full run)
 - `model.pt` – final trained network
 - `checkpoints/` – intermediate checkpoints at each interval
   - `checkpoint_games_00100.pt`, `checkpoint_games_00200.pt`, etc.
+- `resume_state.json` – last fully committed snapshot metadata for safe resume
 
 > **Scaling study:** Use `--checkpoint-interval 100` with `--games 1000` to get
 > 10 checkpoints (at 100, 200, ..., 1000 games) in a single run. Then use
@@ -150,6 +151,9 @@ uv run train \
   --checkpoint-interval 10 \
   --run-dir runs/<run_dir>
 ```
+
+Resume is crash-safe across checkpoint writes: if interruption happens mid-save,
+training rolls back to the last committed snapshot so model/replay/metrics stay consistent.
 
 ---
 
