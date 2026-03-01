@@ -135,13 +135,46 @@ class ParticleDeterminizationSampler:
       )
       return self._last_valid_sample
 
-    chosen_board = self.rng.choice(list(self._particles.keys()))
+    self._particles = self._normalize_particle_weights(self._particles)
+    keys = list(self._particles.keys())
+    if not keys:
+      return self._last_valid_sample
+
+    weights = [self._particles[k].weight for k in keys]
+    chosen_board = self.rng.choices(keys, weights=weights, k=1)[0]
     chosen_particle = self._particles[chosen_board]
 
-    total_weight = sum(p.weight for p in self._particles.values())
-    prior = chosen_particle.weight / total_weight
+    total_weight = float(sum(weights))
+    if total_weight <= 0.0 or not np.isfinite(total_weight):
+      prior = 1.0 / len(keys)
+    else:
+      prior = chosen_particle.weight / total_weight
+      if not np.isfinite(prior):
+        prior = 1.0 / len(keys)
     self._last_valid_sample = (chosen_particle.serialized, prior)
     return chosen_particle.serialized, prior
+
+  def _normalize_particle_weights(
+    self, particles: dict[str, _Particle]
+  ) -> dict[str, _Particle]:
+    if not particles:
+      return {}
+
+    items = list(particles.items())
+    weights = np.array([p.weight for _, p in items], dtype=np.float64)
+    weights = np.where(np.isfinite(weights) & (weights > 0.0), weights, 0.0)
+
+    total = float(np.sum(weights))
+    if total <= 0.0 or not np.isfinite(total):
+      uniform = 1.0 / len(items)
+      for _, particle in items:
+        particle.weight = uniform
+      return particles
+
+    normalized = weights / total
+    for (_, particle), weight in zip(items, normalized, strict=True):
+      particle.weight = float(weight)
+    return particles
 
   def _ai_obs(self, state: openspiel.State) -> bytes:
     return np.asarray(
@@ -192,7 +225,7 @@ class ParticleDeterminizationSampler:
         else:
           new_particles[child_hash].weight += particle.weight
 
-    return new_particles
+    return self._normalize_particle_weights(new_particles)
 
   def _get_opponent_action_weights(
     self,
@@ -210,7 +243,8 @@ class ParticleDeterminizationSampler:
         if not legal:
           results.append([])
           continue
-        probs = np.array([policy_probs[a] for a in legal], dtype=np.float32)
+        probs = np.array([policy_probs[a] for a in legal], dtype=np.float64)
+        probs = np.where(np.isfinite(probs), probs, 0.0)
         probs = np.maximum(probs, 1e-12)
         results.append(probs.tolist())
       return results
@@ -290,8 +324,11 @@ class ParticleDeterminizationSampler:
           break
 
         untried = list(untried_indices)
-        w = [probs[i] for i in untried]
-        action_idx = self.rng.choices(untried, weights=w, k=1)[0]
+        w = np.array([probs[i] for i in untried], dtype=np.float64)
+        w = np.where(np.isfinite(w) & (w > 0.0), w, 0.0)
+        if float(np.sum(w)) <= 0.0:
+          break
+        action_idx = self.rng.choices(untried, weights=w.tolist(), k=1)[0]
         untried_indices.remove(action_idx)
 
         action = legal[action_idx]
@@ -302,7 +339,9 @@ class ParticleDeterminizationSampler:
         if obs != target_obs:
           continue
 
-        new_weight = probs[action_idx] * weight
+        new_weight = float(probs[action_idx]) * float(weight)
+        if not np.isfinite(new_weight) or new_weight <= 0.0:
+          continue
         if child_hash not in new_particles:
           new_particles[child_hash] = _Particle(
             serialized=child_str, weight=new_weight
@@ -327,11 +366,15 @@ class ParticleDeterminizationSampler:
     adjusted_weights = utils.apply_temp(weight_array, temperature=temperature)
 
     for (_, particle), new_weight in zip(
-      new_particles.items(), adjusted_weights
+      new_particles.items(), adjusted_weights, strict=True
     ):
-      particle.weight = new_weight
+      particle.weight = (
+        float(new_weight)
+        if np.isfinite(new_weight) and new_weight > 0.0
+        else 0.0
+      )
 
-    return new_particles
+    return self._normalize_particle_weights(new_particles)
 
   def _rebuild_particles(self) -> None:
     """Rebuild particles using the stored observation history."""
@@ -365,7 +408,7 @@ class ParticleDeterminizationSampler:
         start_idx = 0
 
       logger.debug(
-        f"Rebuild attempt {attempt + 1}/{self.rebuild_tries} starting from index {start_idx}."
+        f"Rebuild attempt {attempt}/{self.rebuild_tries} starting from index {start_idx}."
       )
       history_scale = (
         1.0 + (len(self._history) - start_idx) / self.game.max_game_length()
@@ -376,7 +419,7 @@ class ParticleDeterminizationSampler:
         int(self.matches_per_particle * history_scale * attempt_scale),
         self.game.num_distinct_actions(),
       )
-      temperature = self.temperature * history_scale * attempt_scale
+      temperature = self.temperature * attempt_scale
 
       logger.debug(
         f"Rebuilding with num_particles={num_particles} "

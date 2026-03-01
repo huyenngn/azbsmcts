@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import typing as t
 
+import numpy as np
+
 from agents import base
 
 if t.TYPE_CHECKING:
@@ -133,8 +135,16 @@ class BSMCTSAgent(base.MCTSAgent):
         legal,
         key=lambda a: node.uct_value(a, self.c_uct, self.lambda_guess),
       )
-    probs = node.opponent_action_probs(legal, self.lambda_predict)
-    return self.rng.choices(legal, weights=probs, k=1)[0]
+    probs = np.array(
+      node.opponent_action_probs(legal, self.lambda_predict), dtype=np.float64
+    )
+    probs = np.where(np.isfinite(probs) & (probs > 0.0), probs, 0.0)
+    total = float(np.sum(probs))
+    if total <= 0.0:
+      probs = np.ones(len(legal), dtype=np.float64) / len(legal)
+    else:
+      probs /= total
+    return self.rng.choices(legal, weights=probs.tolist(), k=1)[0]
 
   def _rollout(self, state: openspiel.State) -> float:
     """Random playout to terminal."""

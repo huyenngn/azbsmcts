@@ -189,6 +189,39 @@ class TestAZBSMCTSAgent:
     assert np.isclose(pi_train.sum(), 1.0, atol=1e-5)
     assert np.isclose(pi_no_noise.sum(), 1.0, atol=1e-5)
 
+  def test_selection_handles_non_finite_opponent_probs(
+    self,
+    game: openspiel.Game,
+    net: nets.TinyPolicyValueNet,
+    sampler: samplers.ParticleDeterminizationSampler,
+  ) -> None:
+    """Test non-finite opponent probs fall back to a safe distribution."""
+    agent = agents.AZBSMCTSAgent(
+      game=game,
+      player_id=0,
+      obs_size=game.observation_tensor_size(),
+      sampler=sampler,
+      T=2,
+      S=1,
+      seed=42,
+      net=net,
+    )
+
+    state = game.new_initial_state()
+    state.apply_action(state.legal_actions()[0])  # move to opponent turn
+    assert state.current_player() == 1
+    legal = state.legal_actions()
+
+    node = agent.tree.get_or_create(
+      agent.obs_key(state, agent.player_id), state.current_player()
+    )
+    node.opponent_action_probs = (  # type: ignore[method-assign]
+      lambda actions, lambda_predict=1.0: [float("nan")] * len(actions)
+    )
+
+    action = agent._selection(state.clone(), node)
+    assert action in legal
+
 
 class TestBSMCTSAgent:
   """Tests for BSMCTSAgent class (non-neural baseline)."""

@@ -5,6 +5,7 @@ import pytest
 
 import openspiel
 from belief import samplers
+from belief.samplers import particle as particle_sampler
 
 
 @pytest.fixture
@@ -92,6 +93,25 @@ class TestParticleBeliefSampler:
     assert len(probs) == len(state.legal_actions())
     assert np.allclose(probs, 1e-12)
 
+  def test_sample_opponent_action_handles_nan_probs(
+    self, game: openspiel.Game
+  ) -> None:
+    """Test that NaN probabilities from policy are sanitized."""
+
+    def nan_policy(states: list[openspiel.State]) -> list[np.ndarray]:
+      return [np.full(9, np.nan) for _ in states]
+
+    sampler = samplers.ParticleDeterminizationSampler(
+      game=game, ai_id=0, opponent_policy=nan_policy, seed=42
+    )
+    state = game.new_initial_state()
+
+    probs_list = sampler._get_opponent_action_weights([state])
+    probs = probs_list[0]
+    assert len(probs) == len(state.legal_actions())
+    assert np.all(np.isfinite(probs))
+    assert np.allclose(probs, 1e-12)
+
   def test_reset_clears_state(self, game: openspiel.Game) -> None:
     """Test that reset clears history and particles."""
     sampler = samplers.ParticleDeterminizationSampler(
@@ -151,3 +171,36 @@ class TestParticleBeliefSampler:
     # No history, should return initial state
     sampled = sampler.sample()
     assert sampled is not None
+
+  def test_sample_with_prior_handles_zero_total_weight(
+    self, game: openspiel.Game
+  ) -> None:
+    """Test that zero particle weights are normalized safely."""
+    sampler = samplers.ParticleDeterminizationSampler(
+      game=game, ai_id=0, seed=42
+    )
+
+    state_after = game.new_initial_state()
+    state_after.apply_action(4)
+    sampler.step(actor=0, action=4, real_state_after=state_after)
+
+    s0 = game.new_initial_state()
+    s1 = game.new_initial_state()
+    s1.apply_action(0)
+    sampler._particles = {
+      str(s0.hash()): particle_sampler._Particle(
+        serialized=s0.serialize(), weight=0.0
+      ),
+      str(s1.hash()): particle_sampler._Particle(
+        serialized=s1.serialize(), weight=0.0
+      ),
+    }
+
+    sampled, prior = sampler.sample_with_prior()
+
+    assert sampled in {s0.serialize(), s1.serialize()}
+    assert prior == pytest.approx(0.5)
+    assert np.isfinite(prior)
+    assert sum(p.weight for p in sampler._particles.values()) == pytest.approx(
+      1.0
+    )

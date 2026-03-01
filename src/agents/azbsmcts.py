@@ -157,8 +157,16 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
 
     if node.player_to_act == self.player_id:
       return max(legal, key=lambda a: node.puct_value(a, self.c_puct))
-    probs = node.opponent_action_probs(legal, self.lambda_predict)
-    return self.rng.choices(legal, weights=probs, k=1)[0]
+    probs = np.array(
+      node.opponent_action_probs(legal, self.lambda_predict), dtype=np.float64
+    )
+    probs = np.where(np.isfinite(probs) & (probs > 0.0), probs, 0.0)
+    total = float(np.sum(probs))
+    if total <= 0.0:
+      probs = np.ones(len(legal), dtype=np.float64) / len(legal)
+    else:
+      probs /= total
+    return self.rng.choices(legal, weights=probs.tolist(), k=1)[0]
 
   def _search(
     self,
@@ -363,9 +371,10 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       raise ValueError("No legal actions available")
 
     probs = np.array([pi[a] for a in legal], dtype=np.float32)
+    probs = np.where(np.isfinite(probs) & (probs > 0.0), probs, 0.0)
 
     total = float(np.sum(probs))
-    if total <= 0:
+    if total <= 0.0 or not np.isfinite(total):
       best_a = root.get_most_visited_action(actions=legal)
       return int(best_a), pi
 
