@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import pathlib
+import typing as t
 
 import numpy as np
 
 import openspiel
 from scripts.common import config, io, seeding
 from scripts.eval import match
+
+OPPONENTS = ["bsmcts", "random"]
 
 
 def az_winrate(res: dict, az_label: str = "azbsmcts") -> float:
@@ -82,6 +86,99 @@ def extract_games_from_checkpoint(path: pathlib.Path) -> int | None:
   return None
 
 
+def build_signature(
+  *,
+  args: argparse.Namespace,
+  game_cfg: config.GameConfig,
+  run_dir: pathlib.Path,
+) -> dict[str, t.Any]:
+  """Build deterministic signature for resume compatibility checks."""
+  return {
+    "run_dir": str(run_dir.resolve()),
+    "game": {
+      "name": game_cfg.name,
+      "params": game_cfg.params,
+    },
+    "n": args.n,
+    "seed": args.seed,
+    "device": args.device,
+    "search": {
+      "T": args.T,
+      "S": args.S,
+      "c_puct": args.c_puct,
+      "dirichlet_alpha": args.dirichlet_alpha,
+      "dirichlet_weight": args.dirichlet_weight,
+    },
+    "sampler": {
+      "num_particles": args.num_particles,
+      "matches_per_particle": args.matches_per_particle,
+      "rebuild_tries": args.rebuild_tries,
+    },
+    "opponents": OPPONENTS,
+  }
+
+
+def completed_checkpoints(rows: list[dict[str, t.Any]]) -> set[str]:
+  """Collect completed checkpoint IDs from existing rows."""
+  done: set[str] = set()
+  for row in rows:
+    checkpoint = row.get("checkpoint")
+    if isinstance(checkpoint, str):
+      done.add(checkpoint)
+  return done
+
+
+def load_meta_signature(path: pathlib.Path) -> dict[str, t.Any] | None:
+  """Load signature from metadata file if valid, else return None."""
+  if not path.exists():
+    return None
+
+  try:
+    signature = io.read_json(path)
+  except Exception:
+    return None
+
+  if not isinstance(signature, dict):
+    return None
+
+  return signature
+
+
+def apply_signature_to_args(
+  args: argparse.Namespace, signature: dict[str, t.Any]
+) -> bool:
+  """Apply saved signature values onto parsed CLI args."""
+  try:
+    game = signature["game"]
+    search = signature["search"]
+    sampler = signature["sampler"]
+
+    args.game = str(game["name"])
+    args.game_params = json.dumps(game["params"], sort_keys=True)
+
+    args.n = int(signature["n"])
+    args.seed = int(signature["seed"])
+    args.device = str(signature["device"])
+
+    args.T = int(search["T"])
+    args.S = int(search["S"])
+    args.c_puct = float(search["c_puct"])
+    args.dirichlet_alpha = float(search["dirichlet_alpha"])
+    args.dirichlet_weight = float(search["dirichlet_weight"])
+
+    args.num_particles = int(sampler["num_particles"])
+    args.matches_per_particle = int(sampler["matches_per_particle"])
+    args.rebuild_tries = int(sampler["rebuild_tries"])
+    return True
+  except (KeyError, TypeError, ValueError):
+    return False
+
+
+def append_row(path: pathlib.Path, row: dict[str, t.Any]) -> None:
+  with path.open("a", encoding="utf-8") as f:
+    f.write(json.dumps(row) + "\n")
+
+
 def main() -> None:
   p = argparse.ArgumentParser()
   p.add_argument("--seed", type=int, default=0)
@@ -103,6 +200,11 @@ def main() -> None:
     required=True,
     help="Path to a single training run directory (e.g., runs/run_20260130_123456)",
   )
+  p.add_argument(
+    "--resume",
+    action="store_true",
+    help="Resume eval sweep by skipping checkpoints already in eval_sweep.jsonl",
+  )
 
   p.add_argument("--x-axis", type=str, default="games")  # from run config
 
@@ -111,6 +213,33 @@ def main() -> None:
   p.add_argument("--rebuild-tries", type=int, default=5)
 
   args = p.parse_args()
+
+  run_dir = pathlib.Path(args.run_dir)
+  if not run_dir.exists():
+    print(f"Run directory not found: {run_dir}")
+    return
+  if not (run_dir / "model.pt").exists():
+    print(f"No model.pt found in {run_dir}")
+    return
+
+  out_path = run_dir / "eval_sweep.jsonl"
+  meta_path = run_dir / "eval_sweep.meta.json"
+
+  if args.resume:
+    saved_signature = load_meta_signature(meta_path)
+    if saved_signature is not None:
+      if apply_signature_to_args(args, saved_signature):
+        print(f"[resume] Using saved config from {meta_path}")
+      else:
+        print(
+          "[resume] Warning: metadata signature is invalid; "
+          "falling back to CLI args"
+        )
+    else:
+      print(
+        f"[resume] Warning: no valid metadata found at {meta_path}; "
+        "using CLI args"
+      )
 
   game_cfg = config.GameConfig.from_cli(args.game, args.game_params)
   search_cfg = config.SearchConfig(
@@ -127,14 +256,6 @@ def main() -> None:
   )
 
   game = openspiel.Game(game_cfg.name, game_cfg.params)
-
-  run_dir = pathlib.Path(args.run_dir)
-  if not run_dir.exists():
-    print(f"Run directory not found: {run_dir}")
-    return
-  if not (run_dir / "model.pt").exists():
-    print(f"No model.pt found in {run_dir}")
-    return
 
   cfg_path = run_dir / "config.json"
   cfg = io.read_json(cfg_path) if cfg_path.exists() else {}
@@ -167,10 +288,29 @@ def main() -> None:
     print(f"No checkpoints found in {run_dir}")
     return
 
-  rows = []
+  signature = build_signature(args=args, game_cfg=game_cfg, run_dir=run_dir)
+
+  done_checkpoints: set[str] = set()
+
+  if args.resume:
+    if out_path.exists():
+      existing_rows = io.read_jsonl(out_path)
+      done_checkpoints = completed_checkpoints(existing_rows)
+  else:
+    out_path.write_text("", encoding="utf-8")
+
+  io.write_json(meta_path, signature)
+
+  pending_checkpoints = [
+    ckpt for ckpt in checkpoints if ckpt.name not in done_checkpoints
+  ]
+
+  print(f"discovered checkpoints: {len(checkpoints)}")
+  print(f"pending checkpoints: {len(pending_checkpoints)}")
+
   sweep_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-  for ckpt_path in checkpoints:
+  for ckpt_path in pending_checkpoints:
     # Determine games count for this checkpoint
     games_from_name = extract_games_from_checkpoint(ckpt_path)
     x_games = games_from_name if games_from_name else total_games
@@ -226,14 +366,12 @@ def main() -> None:
       "mean_loss_len_vs_random": mean_or_nan(loss_r),
       "mean_draw_len_vs_random": mean_or_nan(draw_r),
     }
-    rows.append(row)
+    append_row(out_path, row)
     print(
       f"{ckpt_id}: games={x_games} "
       f"wr_vs_bsmcts={wr_b:.3f} wr_vs_random={wr_r:.3f}"
     )
 
-  out_path = run_dir / "eval_sweep.jsonl"
-  io.write_jsonl(out_path, rows)
   print(f"Wrote {out_path}")
 
 

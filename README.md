@@ -190,7 +190,7 @@ uv run eval-sweep \
   --run-dir runs/<run_dir> \
   --seed 42 \
   --device cuda \
-  --n 20 \
+  --n 50 \
   --T 8 \
   --S 4 \
   --c-puct 1.5 \
@@ -201,7 +201,18 @@ uv run eval-sweep \
   --rebuild-tries 5
 ```
 
-This generates `runs/<run_dir>/eval_sweep.jsonl` with win rates for each checkpoint.
+Outputs to `runs/<run_dir>/`:
+
+- `eval_sweep.jsonl` – win rates for each checkpoint
+- `eval_sweep.meta.json` – metadata about the evaluation (config, reproducibility fingerprint, etc.)
+
+It is also possible to resume an interrupted sweep evaluation:
+
+```sh
+uv run eval-sweep \
+  --resume \
+  --run-dir runs/<run_dir> \
+```
 
 ---
 
