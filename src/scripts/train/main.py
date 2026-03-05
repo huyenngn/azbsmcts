@@ -16,8 +16,11 @@ from utils import utils
 
 
 def obs_tensor_side_to_move(state: openspiel.State) -> np.ndarray:
+  side = state.current_player()
+  if side < 0:
+    side = 0
   return np.asarray(
-    state.observation_tensor(state.current_player()), dtype=np.float32
+    state.observation_tensor(side), dtype=np.float32
   )
 
 

@@ -85,6 +85,8 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
   def _state_tensor_side_to_move(self, state: openspiel.State) -> torch.Tensor:
     """Get observation tensor from current player's perspective."""
     side = state.current_player()
+    if side < 0:
+      side = self.player_id
     obs = self.obs_tensor(state, side)
     if obs.size != self._obs_size:
       raise ValueError(
@@ -114,7 +116,10 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
     self, state: openspiel.State, value: float
   ) -> float:
     """Convert side-to-move value to root player's perspective."""
-    return value if state.current_player() == self.player_id else -value
+    side = state.current_player()
+    if side < 0:
+      side = self.player_id
+    return value if side == self.player_id else -value
 
   def _expand(
     self,
@@ -131,7 +136,18 @@ class AZBSMCTSAgent(base.MCTSAgent, base.PolicyTargetMixin):
       if a not in node.legal_actions:
         node.legal_actions.append(a)
 
-    priors = self._nn_priors(gamma_state)
+    if not legal:
+      return
+
+    if gamma_state.current_player() >= 0:
+      priors = self._nn_priors(gamma_state)
+    else:
+      priors = np.zeros(
+        (self.game.num_distinct_actions(),), dtype=np.float32
+      )
+      uniform = 1.0 / len(legal)
+      for a in legal:
+        priors[a] = uniform
 
     if add_dirichlet and self.dirichlet_alpha > 0:
       dir_seed = self.rng.getrandbits(32)

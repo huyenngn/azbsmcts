@@ -104,6 +104,8 @@ def make_agent(
         obs_list = []
         for state in states:
           side = state.current_player()
+          if side < 0:
+            side = player_id
           obs = np.asarray(state.observation_tensor(side), dtype=np.float32)
           obs_list.append(obs)
 
