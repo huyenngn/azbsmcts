@@ -111,7 +111,7 @@ uv run train \
   --games 1000 \
   --checkpoint-interval 10 \
   --T 8 \
-  --S 4 \
+  --S 20 \
   --c-puct 1.5 \
   --dirichlet-alpha 0.03 \
   --dirichlet-weight 0.25 \
@@ -149,6 +149,7 @@ It is possible to resume training from a previous run:
 uv run train \
   --resume \
   --checkpoint-interval 10 \
+  --replay-max-examples 50000 \
   --run-dir runs/<run_dir>
 ```
 
@@ -169,7 +170,7 @@ uv run eval-match \
   --device cuda \
   --n 20 \
   --T 8 \
-  --S 4 \
+  --S 20 \
   --c-puct 1.5 \
   --dirichlet-alpha 0.03 \
   --dirichlet-weight 0.25 \
@@ -192,7 +193,7 @@ uv run eval-sweep \
   --device cuda \
   --n 50 \
   --T 8 \
-  --S 4 \
+  --S 20 \
   --c-puct 1.5 \
   --dirichlet-alpha 0.03 \
   --dirichlet-weight 0.25 \
