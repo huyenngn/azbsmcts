@@ -89,12 +89,12 @@ uv run tune \
 
 **Tuned parameters:**
 
-| Parameter | Range       | Description                      |
-| --------- | ----------- | -------------------------------- |
-| `T`       | 6–12        | MCTS iterations per move         |
-| `S`       | 4–6         | Simulations per sampled particle |
-| `c_puct`  | 0.5–3.0     | PUCT exploration constant        |
-| `lr`      | 2e-4 – 3e-3 | Learning rate                    |
+| Parameter | Range       | Description                          |
+| --------- | ----------- | ------------------------------------ |
+| `T`       | 6–12        | Number of sampled particles per move |
+| `S`       | 4–6         | Iterations per sampled particle      |
+| `c_puct`  | 0.5–3.0     | PUCT exploration constant            |
+| `lr`      | 2e-4 – 3e-3 | Learning rate                        |
 
 Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
 
@@ -168,7 +168,7 @@ Evaluate one model against a baseline:
 uv run eval-match \
   --seed 42 \
   --device cuda \
-  --n 20 \
+  --n 50 \
   --T 8 \
   --S 20 \
   --c-puct 1.5 \
@@ -252,6 +252,7 @@ uv run plot-eval --run-dir runs/<run_dir>
 Outputs to `runs/<run_dir>/`:
 
 - `eval_winrate.png` – win rate vs training budget for that run
+- `eval_game_lengths.png` – average game length vs training budget
 
 ## Reproducibility
 
@@ -267,5 +268,3 @@ See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for detailed guarantees, limitati
 ## License
 
 This project is licensed under the Apache License 2.0. For the full license text, see the [`LICENSE`](LICENSE) file.
-
-It contains modifications of [OpenSpiel's](https://github.com/google-deepmind/open_spiel) AlphaZero algorithm and MCTS implementations, originally developed by Google DeepMind. The original license has been preserved in the relevant source files.

@@ -4,6 +4,7 @@ import GoStone from "./GoStone.vue"
 const props = defineProps<{
   boardSize: number
   board: number[]
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 
 <template>
   <div
+    :class="{ 'opacity-50 pointer-events-none': disabled }"
     class="self-center grid ml-10 sm:ml-0"
     :style="{
       gridTemplateColumns: `repeat(${props.boardSize}, minmax(0, 1fr))`,

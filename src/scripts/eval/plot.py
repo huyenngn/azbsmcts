@@ -76,7 +76,7 @@ def main() -> None:
   plt.xlabel("Training games")
   plt.ylabel("Win rate")
   plt.ylim(0.0, 1.0)
-  plt.title(f"Evaluation: {run_dir.name}")
+  plt.title("Evaluation against Baselines")
   plt.legend()
   plt.grid(True, alpha=0.3)
   plt.tight_layout()
@@ -110,7 +110,7 @@ def main() -> None:
   ax2.legend()
   ax2.grid(True, alpha=0.3)
 
-  plt.suptitle(f"Game Length Analysis: {run_dir.name}")
+  plt.suptitle("Game Length Analysis by Outcome")
   plt.tight_layout()
 
   out_path_lengths = run_dir / "eval_game_lengths.png"

@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import GoBoard from '@/components/GoBoard.vue'
-import { Button } from '@/components/ui/button'
+import { computed, onMounted, ref, watchEffect } from "vue"
+import GoBoard from "@/components/GoBoard.vue"
+import { Button } from "@/components/ui/button"
 import {
   type MakeMoveRequest,
   type StartGameRequest,
   type ParticlesResponse,
   type GameStateResponse,
-} from '@/lib/types'
-import { ChevronLeft, RotateCw } from 'lucide-vue-next'
-import MoveInfoHistory from '@/components/MoveInfoHistory.vue'
-import ParticlesVisualizer from '@/components/ParticlesVisualizer.vue'
-import { getBackend, streamGameUpdates } from '@/lib/requests'
-import { formatMoveInfo, parseBoard } from '@/lib/game'
+} from "@/lib/types"
+import { ChevronLeft, RotateCw } from "lucide-vue-next"
+import MoveInfoHistory from "@/components/MoveInfoHistory.vue"
+import ParticlesVisualizer from "@/components/ParticlesVisualizer.vue"
+import { getBackend, streamGameUpdates } from "@/lib/requests"
+import { formatMoveInfo, parseBoard } from "@/lib/game"
 
 const NUM_PARTICLES_TO_SHOW = 10
 
@@ -31,6 +31,22 @@ const isAiThinking = ref<boolean>(false)
 const moveHistory = ref<string[]>([])
 const particles = ref<number[][]>([])
 const totalParticles = ref<number>(0)
+
+const currentMessage = computed(() => {
+  if (isTerminal.value) {
+    if (returns.value[props.playerId] > returns.value[1 - props.playerId]) {
+      return "You win!"
+    } else if (returns.value[props.playerId] < returns.value[1 - props.playerId]) {
+      return "You lose!"
+    } else {
+      return "Draw"
+    }
+  } else if (isAiThinking.value) {
+    return "AI is thinking..."
+  } else {
+    return "Your turn"
+  }
+})
 
 function updateGameState(data: GameStateResponse) {
   if (data.current_player !== props.playerId) {
@@ -55,11 +71,11 @@ async function startGame() {
 
   try {
     await streamGameUpdates(
-      '/start',
+      "/start",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           board_size: props.boardSize,
@@ -84,9 +100,9 @@ async function startGame() {
           returns.value = data.returns
         },
         onError: (data) => {
-          console.error('Streaming error:', data)
+          console.error("Streaming error:", data)
         },
-      },
+      }
     )
   } finally {
     isLoading.value = false
@@ -100,11 +116,11 @@ async function handleMove(action: number) {
 
   try {
     await streamGameUpdates(
-      '/step',
+      "/step",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           action,
@@ -115,9 +131,9 @@ async function handleMove(action: number) {
           updateGameState(data)
         },
         onError: (data) => {
-          console.error('Streaming error:', data)
+          console.error("Streaming error:", data)
         },
-      },
+      }
     )
   } finally {
     isLoading.value = false
@@ -131,7 +147,7 @@ async function fetchParticles() {
 
   try {
     const data = await getBackend<ParticlesResponse>(
-      `/particles?num_particles=${NUM_PARTICLES_TO_SHOW}`,
+      `/particles?num_particles=${NUM_PARTICLES_TO_SHOW}`
     )
 
     particles.value = []
@@ -141,13 +157,17 @@ async function fetchParticles() {
     }
     totalParticles.value = data.total
   } catch (error) {
-    console.error('Failed to fetch particles:', error)
+    console.error("Failed to fetch particles:", error)
     particles.value = []
     totalParticles.value = 0
   } finally {
     isLoading.value = false
   }
 }
+
+watchEffect(() => {
+  document.title = currentMessage.value
+})
 
 onMounted(() => {
   startGame()
@@ -160,17 +180,7 @@ onMounted(() => {
       <RouterLink to="/">
         <Button variant="outline" size="icon" :disabled="isLoading"><ChevronLeft /></Button>
       </RouterLink>
-      <span>{{
-        isTerminal
-          ? returns[props.playerId] > returns[1 - props.playerId]
-            ? 'You win!'
-            : returns[props.playerId] < returns[1 - props.playerId]
-              ? 'You lose!'
-              : 'Draw'
-          : isAiThinking
-            ? 'AI is thinking...'
-            : 'Your turn'
-      }}</span>
+      <span>{{ currentMessage }}</span>
       <div class="flex items-center gap-2">
         <Button variant="outline" size="icon" @click="startGame" :disabled="isLoading"
           ><RotateCw
@@ -185,12 +195,16 @@ onMounted(() => {
       </div>
     </div>
     <div
-      :class="{ 'opacity-50 pointer-events-none': isLoading || isTerminal }"
       class="grow sm:grow-0 flex items-stretch sm:items-stretch justify-stretch sm:justify-between gap-8 sm:gap-0 sm:flex-row flex-col"
     >
-      <GoBoard :boardSize="boardSize" :board="board" @move="handleMove" />
+      <GoBoard
+        :boardSize="boardSize"
+        :board="board"
+        :disabled="isLoading || isTerminal"
+        @move="handleMove"
+      />
       <div class="grow flex flex-col items-stretch justify-between gap-4">
-        <Button @click="handleMove(PASS_ACTION)">Pass</Button>
+        <Button @click="handleMove(PASS_ACTION)" :disabled="isLoading || isTerminal">Pass</Button>
         <MoveInfoHistory :previousMoveInfos="moveHistory" />
       </div>
     </div>

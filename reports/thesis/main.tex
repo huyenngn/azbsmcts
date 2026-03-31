@@ -577,33 +577,33 @@ Table~\ref{tab:hyperparams} summarizes all parameters used in training and evalu
   \label{tab:hyperparams}
   \begin{tabularx}{\textwidth}{l l X}
     \toprule
-    \textbf{Category} & \textbf{Parameter}                     & \textbf{Value}     \\
+    \textbf{Category} & \textbf{Parameter}                         & \textbf{Value}     \\
     \midrule
-    \multicolumn{3}{l}{\textit{Search}}                                             \\
-                      & MCTS iterations per move ($T$)         & 8                  \\
-                      & Simulations per belief sample ($S$)    & 4                  \\
-                      & Exploration constant ($c_\text{puct}$) & 1.5                \\
+    \multicolumn{3}{l}{\textit{Search}}                                                 \\
+                      & Number of sampled particles per move ($T$) & 8                  \\
+                      & Iterations per sampled particle ($S$)      & 20                 \\
+                      & Exploration constant ($c_\text{puct}$)     & 1.5                \\
     \midrule
-    \multicolumn{3}{l}{\textit{Belief Sampler}}                                     \\
-                      & Number of particles                    & 50                 \\
-                      & Matches per particle                   & 15                 \\
-                      & Rebuild attempts                       & 5                  \\
+    \multicolumn{3}{l}{\textit{Belief Sampler}}                                         \\
+                      & Number of particles                        & 50                 \\
+                      & Matches per particle                       & 15                 \\
+                      & Rebuild attempts                           & 5                  \\
     \midrule
-    \multicolumn{3}{l}{\textit{Exploration (training only)}}                        \\
-                      & Dirichlet noise $\alpha$               & 0.03               \\
-                      & Dirichlet noise weight $\varepsilon$   & 0.25               \\
+    \multicolumn{3}{l}{\textit{Exploration (training only)}}                            \\
+                      & Dirichlet noise $\alpha$                   & 0.03               \\
+                      & Dirichlet noise weight $\varepsilon$       & 0.25               \\
     \midrule
-    \multicolumn{3}{l}{\textit{Learning}}                                           \\
-                      & Self-play games                        & 1000               \\
-                      & Training epochs per game               & 5                  \\
-                      & Mini-batch size                        & 64                 \\
-                      & Learning rate                          & $1 \times 10^{-4}$ \\
-                      & Replay buffer capacity                 & 50000              \\
+    \multicolumn{3}{l}{\textit{Learning}}                                               \\
+                      & Self-play games                            & 1000               \\
+                      & Training epochs per game                   & 5                  \\
+                      & Mini-batch size                            & 64                 \\
+                      & Learning rate                              & $1 \times 10^{-4}$ \\
+                      & Replay buffer capacity                     & 50000              \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-The search budget of $T = 8$ iterations with $S = 4$ simulations per sample was chosen to provide a minimal but non-trivial search that remains feasible on consumer hardware while still allowing agents to distinguish the value of different actions. The belief sampler maintains 50 distinct particles with up to 15 forward-simulation matches per particle and 5 rebuild attempts, providing reasonable coverage of the belief space without excessive computation.
+The search budget of $T = 8$ simulations with $S = 4$ iterations per sample was chosen to provide a minimal but non-trivial search that remains feasible on consumer hardware while still allowing agents to distinguish the value of different actions. The belief sampler maintains 50 distinct particles with up to 15 forward-simulation matches per particle and 5 rebuild attempts, providing reasonable coverage of the belief space without excessive computation.
 These parameters were fixed throughout training.
 During evaluation, exploration noise was disabled and actions were selected deterministically.
 
@@ -617,107 +617,115 @@ For each checkpoint, the AZBSMCTS agent played 50 games as black and 50 games as
 
 The primary evaluation metrics are win rate, reported per matchup and as a function of training progress, and game length. Win rates measure whether the learning-based agent improves over training relative to the baselines. Game lengths provide additional insight into how agent behavior evolves, for instance whether the agent learns to play more efficiently or becomes overly passive.
 
-% \subsection{Reported Results}
+\subsection{Reported Results}
 
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.8\textwidth]{assets/TUB.png}
-%   \caption{Win rate of the AlphaZero-inspired belief agent against BS-MCTS as a function of the number of self-play training games. Each point is evaluated over 100 games with balanced colors.}
-%   \label{fig:learning_curve}
-% \end{figure}
+\subsubsection{Training Dynamics}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{assets/train_loss.png}
+  \caption{Training loss curves for the AZBSMCTS agent during training on 1000 self-play games. The policy, value and total losses are shown over 500 logged training epochs, corresponding to 5 supervised training epochs after each batch of 10 self-play games. Losses are averaged over mini-batches and smoothed for visualization.}
+  \label{fig:training_loss}
+\end{figure}
+
+The learning curves in Figure~\ref{fig:training_loss} show a stable training run. The total loss drops quickly at the start, then keeps declining more slowly, dropping from about 4.17 to 2.64. Most of the remaining improvement is in the policy head. The policy loss keeps drifting down, but only gradually, going from about 3.19 to to about 2.36.
+The value head improves fast early, dropping from about 0.97 to a minimum near 0.20 around epoch 190, then drifts back up a bit, mostly plateauing after epoch 385 around 0.27.
+
+Overall, the training curves indicate stable optimization, but do not by themselves establish improvement in playing strength.
+
+\subsubsection{Evaluation Against Baseline Opponents}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{assets/eval_winrate.png}
+  \caption{Win rate of the AZBSMCTS agent against baseline opponents as a function of the number of self-play training games. Each point is evaluated over 100 games with balanced color assignments.}
+  \label{fig:winrate}
+\end{figure}
+
+The results in Figure~\ref{fig:winrate} show that the AZBSMCTS agent starts with a win rate of 42\% against BS-MCTS and 46\% against the Random agent at the first checkpoint. This indicates that after 100 self-play games, the learning-based agent is close to parity with both the BS-MCTS baseline and the Random agent.
+At 300 self-play games, the win rates increase to 57\% against BS-MCTS and 49\% against the Random agent, suggesting that the agent may be starting to outperform the belief-based search baseline, but still recording more wins than losses against essentially random play.
+With 500 self-play games, the win rate against BS-MCTS drops back to 43\%, while the win rate against the Random agent increases to 52\%.
+At 700 self-play games, the win rate against BS-MCTS increases again to
+47\%, while the win rate against the Random agent is at 51\%.
+Finally, at 1000 self-play games, win rates drop further to 45\% against BS-MCTS and 49\% against the Random agent, indicating that the learning-based agent remained essentially at parity with both baselines after 1000 self-play games.
+
+Overall, the results show substantial variation across checkpoints. In particular, performance against BS-MCTS does not signal clear monotonic improvement over training, with an increase at 300 games followed by subsequent fluctuations around parity without a stable upward trend.
+Performance against the Random baseline is somewhat more stable, but also remains close to parity for most checkpoints and only a slight increase toward the end of training.
+Since each checkpoint evaluation consists of 100 games, these win rates should be interpreted as approximate indicators of playing strength rather than precise estimates. Nevertheless, the overall pattern does not provide clear evidence of steady improvement across training.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=1\textwidth]{assets/eval_game_lengths.png}
+  \caption{Average game length of the AZBSMCTS agent against baseline opponents by outcome as a function of the number of self-play training games. Each point is evaluated over 100 games with balanced color assignments.}
+  \label{fig:game_length}
+\end{figure}
+
+Throughout all checkpoints: winning faster than losing
+trend: later checkpoints -> longer games
+means winning slower now that im smarter
+why? -> i get smarter but opponent also gets smarter
+
+\subsubsection{Baseline Strength Under the Chosen Search Budget}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{assets/TUB.png}
+  \caption{Outcomes of a BS-MCTS vs. Random matchup over 100 evaluation games.}
+  \label{fig:outcomes}
+\end{figure}
+
+In a matchup between BS-MCTS and the Random agent, the BS-MCTS agent achieves a win rate of 52\%, with 100 games resulting, albeit not significantly, in more losses than wins for the Random agent and a small number of draws, failing to decisively outperform the Random agent under the chosen search budget.
+
+This result is consequential for interpreting the checkpoint evaluations of the AZBSMCTS agent. If the BS-MCTS baseline itself only marginally outperforms the Random agent under the chosen search budget, then parity with BS-MCTS should not be interpreted as evidence of strong absolute play. Rather, it suggests that the evaluation was conducted in a comparatively weak-search regime, in which the baseline itself may have been constrained by the limited computational budget.
+
+This interpretation is consistent with prior work on BS-MCTS for Phantom Go. Wang et al. report that BS-MCTS performance depends strongly on the number of samplings and iterations. Their Phantom Go experiments used substantially larger search settings, including 2500 simulations and 80 iterations per decision. Under those conditions, BS-MCTS outperformed competing IS-MCTS variants in Phantom Go.\cite{Wang2015bsmcts}
+
+\subsubsection{Summary of Empirical Findings}
+
+Taken together, the empirical results show a clear gap between optimization behaviour and measured playing strength. The training losses decreased steadily throughout the run, indicating stable learning dynamics, with the largest improvements occurring early in training. However, the checkpoint evaluations against BS-MCTS and Random did not show a clear monotonic increase in win rate, and performance remained close to parity for much of training.
+In addition, the direct evaluation of BS-MCTS against the Random agent showed only a narrow advantage under the chosen search budget. This suggests that the experimental setting represented a comparatively weak-search regime, which limits how strongly parity against the baseline can be interpreted. Overall, the results do not provide clear evidence that self-play training led to a robust and consistently stronger Phantom Go agent under the computational budget used in this thesis.
+These findings motivate a closer discussion of whether the observed weak performance reflects a limitation of the proposed approach itself or instead the difficulty of evaluating such an approach under a severely constrained computational budget.
+
+\section{Discussion}
+
+\subsection{Effect of Limited Search Budget}
+
+A plausible explanation for the weak empirical performance is the limited computational budget available during self-play and evaluation. In the proposed agent, search was distributed across sampled belief particles, resulting in a comparatively small number of search iterations per move. In hidden-information games such as Phantom Go, this is especially restrictive because computation must be spread across multiple hypothesized underlying states rather than concentrated on a single fully observed state.
+
+This should not be interpreted simply as a matter of suboptimal parameter choice. Rather, the search budget used in this thesis was the largest budget that remained practically runnable within the available hardware and time constraints. The resulting experiments therefore reflect the performance of the method under a realistic but compute-constrained setting.
+
+Prior work suggests that this distinction matters. Wang et al. report that BS-MCTS performance in Phantom Go depends strongly on the numbers of samplings and iterations, and their strong Phantom Go setting used substantially larger search budgets than those used in this thesis. Likewise, prior work on ISMCTS emphasizes that hidden-information search is disadvantaged when computational effort must be distributed across multiple determinizations or information sets instead of being focused deeply on a single search tree.\cite{Wang2015bsmcts}\cite{Cowling2012ismcts}
+
+Under these constraints, it is plausible that self-play produced targets that were too weak and noisy to support meaningful policy improvement. Consequently, the present results should not be read as a definitive negative result on AlphaZero-style learning for imperfect-information games. A more cautious interpretation is that, in Phantom Go, the combination of belief-based search and self-play learning may be too computationally demanding to assess conclusively at the scale feasible in this thesis.
 
 
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.8\textwidth]{assets/TUB.png}
-%   \caption{Win rates of evaluated agents against baseline opponents. Results are averaged over 100 games per matchup with balanced color assignments.}
-%   \label{fig:baseline_comparison}
-% \end{figure}
+\subsection{AlphaZero-Style Learning Under Imperfect Information}
 
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.7\textwidth]{assets/TUB.png}
-%   \caption{Win rate of the AlphaZero-inspired belief agent against BS-MCTS, split by playing color. Each bar is evaluated over 50 games per color.}
-%   \label{fig:color_split}
-% \end{figure}
+A second possible explanation concerns the suitability of the network architecture for the domain. The AlphaZero-inspired component used in this work predicts policy and value from the current network input in a feedforward manner and does not maintain an internal memory over past observations. This design is natural in perfect-information games, where the current board state is sufficient to determine the game state, but Phantom Go is fundamentally different: the current observation does not uniquely determine the underlying state of the game. As a result, the network may be forced to average across multiple latent states that are observationally consistent but strategically different. In such a setting, belief representation and history may be more central than in classical AlphaZero-style applications. This interpretation is consistent with prior work on hidden-information search, which emphasizes the importance of reasoning over information sets and belief states rather than single observed positions.
 
+\subsection{Limitations of the Experimental Setup}
 
+The main limitation of this study is computational scale. Phantom Go has extremely large game-tree complexity, and prior work has shown that belief-based search performance in this domain is highly sensitive to search budget. Within the hardware and runtime constraints available for this thesis, only a comparatively small search budget and a limited number of self-play games could be executed.\cite{Wang2015bsmcts}
 
-% \section{Discussion}
+As a result, this thesis evaluates the proposed method only in a restricted region of the compute--performance trade-off. The experiments therefore do not allow a definitive conclusion about whether an AlphaZero-inspired approach to Phantom Go is fundamentally infeasible, or whether stronger results would emerge under substantially larger search budgets, more extensive self-play, or repeated runs at larger scale.
 
-% \subsection{Summary of Empirical Findings}
+Additional limitations follow from this constraint. Each checkpoint evaluation was based on 100 games, which leaves substantial variance in the estimated win rates. Only one main training run was conducted, making it difficult to separate systematic effects from run-specific noise. More broadly, the study could not fully disentangle whether the main bottleneck was limited search depth, imperfect belief approximation, architectural mismatch, or the interaction of all three factors.
 
-% The results in Figure~\ref{fig:baseline_comparison} show that the proposed AlphaZero-inspired belief-based agent consistently outperforms the random baseline, confirming that both belief-state search and learning provide meaningful guidance in Phantom Go. When compared to the BS-MCTS baseline, the learning-based agent achieves comparable performance, with win rates that improve gradually as the number of self-play training games increases.
-
-% As shown in Figure~\ref{fig:learning_curve}, learning curves exhibit noticeable variance, particularly at smaller training budgets, but show an overall upward trend as more self-play data is accumulated. No abrupt performance jumps are observed and improvements remain incremental across training budgets.
-
-% \subsection{Effect of Learning under Imperfect Information}
-
-% The results indicate that learning can improve decision-making under imperfect information, but that these improvements are modest under limited computational resources. Rather than discovering radically new strategies, the neural network appears to help guide search toward actions that are more robust across belief-consistent hidden states.
-
-% This behavior is consistent with the interpretation of the policy and value heads in Phantom Go. The policy head does not predict optimal moves in a fully known state, but instead learns preferences that perform reasonably well under uncertainty. Similarly, the value head provides an estimate of the expected outcome averaged over possible hidden states, which helps stabilize search but does not eliminate ambiguity inherent to the game.
-
-% Overall, learning improves search efficiency and consistency, but does not overcome the fundamental uncertainty imposed by partial observability.
+Accordingly, the strongest conclusion supported by the experiments is not that the proposed approach is ineffective in principle, but that its effectiveness could not be established under the computational budget available in this thesis.
 
 
-% \subsection{Comparison with Belief-State MCTS}
+\subsection{Takeaways}
 
-% BS-MCTS remains a strong baseline throughout the experiments. Its performance highlights the effectiveness of explicit belief-state reasoning even without learning. The AlphaZero-inspired belief agent does not consistently dominate BS-MCTS, but achieves similar performance while relying on a learned policy and value function to guide search.
+Three main conclusions can be drawn from the experiments. First, decreasing training loss did not translate into clearly improved playing strength. Second, the chosen experimental setting represented a weak-search regime, suggesting that computational budget was a major bottleneck for both the baseline and the proposed learning-based agent. Third, the present study does not decisively answer whether an AlphaZero-inspired approach is suitable for Phantom Go, because the combination of belief-based search and self-play learning may require substantially more compute than was available in this thesis.
 
-% This suggests that learning primarily amortizes search knowledge across games rather than replacing search entirely. While BS-MCTS evaluates actions through repeated sampling at each decision point, the learning-based agent gradually internalizes patterns that reduce the reliance on pure search. However, under the limited training budgets and simplified belief modeling used in this thesis, this advantage remains moderate.
+The most defensible interpretation is therefore that the proposed method could not be validated conclusively at the tested scale, rather than that the underlying idea has been disproven.
 
+\section{Conclusion and Future Work}
 
-% \subsection{Limitations of the Proposed Approach}
+available computational resources and time constraints not sufficient
+to conclusively evaluate the proposed method
 
-% Several limitations constrain the observed performance of the proposed method.
-
-% First, the quality of the belief depends heavily on the number of surviving particles. Particle collapse remains a recurring issue, particularly in longer games where the observation history constrains the set of consistent states more tightly. The rebuild mechanism mitigates this but does not eliminate it, and collapsed beliefs can degrade action evaluation. This affects both agents, though AZBSMCTS's neural-network-guided opponent policy in the sampler can help maintain more plausible particles than BS-MCTS's uniform sampling.
-
-% Second, while the AZBSMCTS particle sampler uses the neural network's policy head as an opponent model for resampling, this model is not adapted during play. It reflects the network's current training state and does not exploit patterns in the specific opponent's behavior during a game. The BS-MCTS agent uses no opponent model in its sampler at all, treating all observation-consistent opponent actions as equally likely.
-
-% Third, the neural network architecture is intentionally small and training budgets are limited. These constraints reduce the representational capacity of the model and slow learning. Additionally, no symmetry-based data augmentation is used, further limiting data efficiency.
-
-% Finally, search parameters are fixed across all agents. While this ensures fair comparison, it may not be optimal for the learning-based agent, which could benefit from different exploration-exploitation trade-offs.
-
-
-% \subsection{Relation to Prior Work}
-
-% The observed results align with prior findings in imperfect information games. Consistent with earlier work on IS-MCTS, naive application of search methods that assume full observability performs poorly in Phantom Go. Belief-state reasoning, as used in BS-MCTS, significantly mitigates these issues.
-
-% Compared to the original BS-MCTS formulation, the implementation used in this thesis incorporates a particle-based belief with a rebuild mechanism to recover from particle collapse and checkpointing to accelerate recovery. In the BS-MCTS agent, opponent actions are sampled uniformly during belief updates, keeping the sampler simple and unbiased. The AZBSMCTS agent extends this by using the neural network's policy head as an opponent model in the sampler, producing weighted particles that reflect learned opponent behavior. Both agents go beyond simple rejection sampling through the rebuild and checkpoint mechanisms, but particle collapse under long observation histories remains a practical limitation.
-
-% In contrast to AlphaZero's success in perfect-information games, the results illustrate that learning-based search does not trivially transfer to imperfect information settings. Instead, learning must operate under uncertainty and complements search rather than replacing it.
-
-% \subsection{Takeaways}
-
-% The main takeaway of this study is that AlphaZero-style learning can be meaningfully combined with belief-state search in imperfect information games, even under simplified assumptions and limited compute. While performance gains are modest, the approach demonstrates that learning can guide search toward more robust decisions under uncertainty.
-
-% At the same time, the results emphasize that imperfect information fundamentally limits achievable performance and that belief modeling remains a central challenge. Improvements beyond the results reported here likely require richer belief representations, opponent modeling and increased training budgets.
-
-
-% \section{Conclusion and Future Work}
-
-% This thesis investigated how AlphaZero-style learning can be adapted to an imperfect information setting by integrating belief-state reasoning with Monte Carlo Tree Search. Using Phantom Go as a testbed, the work explored whether learning-based search can provide benefits over non-learning belief-state methods under realistic computational constraints.
-
-% A belief-state Monte Carlo Tree Search baseline was implemented to explicitly handle uncertainty over hidden game states. Building on this baseline, an AlphaZero-inspired agent was proposed that combines belief-state search with a neural network trained through self-play. Unlike standard AlphaZero, the proposed method does not assume access to the true game state and instead operates solely on belief-consistent information available to the player.
-
-% Experimental results show that the learning-based agent reliably outperforms a random baseline and achieves performance comparable to belief-state MCTS. Learning improves search guidance by encouraging action choices that are robust across uncertainty, but does not eliminate the fundamental ambiguity imposed by partial observability. Performance gains remain incremental under limited training budgets and simplified belief modeling.
-
-% Overall, the results demonstrate that AlphaZero-style learning can be meaningfully combined with belief-state search in imperfect information games, even when using small neural networks and modest computational resources. At the same time, the findings highlight that belief modeling remains a central challenge and that learning complements search rather than replacing it in this setting.
-
-% \subsection{Future Work}
-
-% Several directions for future work emerge from this study.
-
-% First, belief modeling could be improved by learning or adapting the opponent policy used during particle resampling, rather than relying on a fixed or uniform policy. Integrating learned opponent models that update during play could improve the accuracy of the belief distribution and reduce the frequency of particle collapse, particularly in longer games.
-
-% Second, data efficiency could be improved through symmetry-based data augmentation. While commonly used in perfect-information Go, extending symmetry exploitation to Phantom Go requires careful handling of partial observability and observation-dependent legality and remains an open challenge.
-
-% Third, larger and more expressive neural network architectures could be explored, along with increased self-play training budgets. This would help clarify whether the observed performance plateau is due to limited model capacity or inherent uncertainty in the game.
-
-% Finally, the approach could be evaluated in other imperfect information domains supported by OpenSpiel to assess its generality beyond Phantom Go.
-
-% Together, these directions point toward richer integrations of learning and belief-state reasoning as a promising avenue for future research in imperfect information games.
+experiments will need to be repeated at larger scale to determine whether stronger results emerge under a more powerful search budget and more extensive self-play training
 
 \newpage
 
