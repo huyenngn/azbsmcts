@@ -91,10 +91,10 @@ uv run tune \
 
 | Parameter | Range       | Description                          |
 | --------- | ----------- | ------------------------------------ |
-| `T`       | 6–12        | Number of sampled particles per move |
-| `S`       | 4–6         | Iterations per sampled particle      |
+| `T`       | 6–30        | Number of sampled particles per move |
+| `S`       | 4–20        | Iterations per sampled particle      |
 | `c_puct`  | 0.5–3.0     | PUCT exploration constant            |
-| `lr`      | 2e-4 – 3e-3 | Learning rate                        |
+| `lr`      | 1e-4 – 3e-3 | Learning rate                        |
 
 Each trial produces its own directory under `runs/`. Best trial summary is written to `runs/optuna_best.json`.
 
